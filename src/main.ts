@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import './style.css';
 
 type Group = { id: string; name: string; address: string; port: number; sources: string[]; members: string[] };
@@ -16,6 +17,7 @@ let busy = false;
 let adbError = '';
 let connected = false;
 let refreshing = false;
+let noticeTimer: ReturnType<typeof setTimeout> | undefined;
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const esc = (s: unknown) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
 const glyph = `<svg viewBox="0 0 32 32" fill="none" aria-hidden="true"><rect x="11" y="2" width="10" height="17" rx="3" stroke="currentColor" stroke-width="2.3"/><path d="M16 19v5m0 0H5v5m11-5h11v5" stroke="currentColor" stroke-width="2.3"/><circle cx="16" cy="15" r="1" fill="currentColor"/></svg>`;
@@ -24,14 +26,13 @@ const locked = () => Boolean(runtime());
 
 document.querySelector('#app')!.innerHTML = `
   <aside><div class="brand"><span class="brand-icon">${glyph}</span><div>ADBShare<small>局域网设备共享</small></div></div>
-    <div class="nav-label">工作空间 <span class="version">PROTOTYPE 0.1</span></div>
-    <div class="side-title"><span>共享组</span><button id="new-group" class="icon-btn" title="新建共享组" aria-label="新建共享组">＋</button></div>
+    <div class="side-title"><span>共享组</span></div>
     <nav id="groups"></nav><button id="new-bottom" class="new-group">＋ 新建共享组</button>
-    <div class="side-bottom"><div class="local-status"><span id="adb-dot" class="dot"></span><span id="adb-status">正在检查本机 ADB</span></div><button id="settings" class="text-btn">本机 ADB 设置 ↗</button><p>共享期间，本机仍可使用设备。<br>关闭窗口将停止全部共享。</p></div>
+    <div class="side-bottom"><div class="local-status"><span id="adb-dot" class="dot"></span><span id="adb-status">正在检查本机 ADB</span></div><button id="settings" class="text-btn">本机 ADB 设置 ↗</button><p>本机访问不受影响。<br>退出时停止共享并清理规则。</p></div>
   </aside>
-  <main><header><div><span class="eyebrow">DEVICE SHARING</span><h1 id="title">让设备在局域网中可达</h1></div><div class="header-actions"><span id="summary" class="quiet"></span><button id="refresh" class="secondary">↻ 刷新设备</button></div></header>
+  <main><header><h1 id="title">共享组</h1><div class="header-actions"><span id="summary" class="quiet"></span><button id="refresh" class="secondary">↻ 刷新设备</button></div></header>
   <div id="notice" role="status" hidden></div>
-  <section id="welcome" class="welcome"><div class="hero-icon">${glyph}</div><span class="eyebrow">从一个共享组开始</span><h2>连接在这里，调试在任何一台电脑。</h2><p>把本机的 ADB 设备分组，通过指定网卡共享给局域网中的电脑。</p><button id="create-first" class="primary">＋ 创建第一个共享组</button><div class="intro-steps"><div><b>01</b><strong>选择设备</strong><span>保留本地连接与访问</span></div><div><b>02</b><strong>设置访问范围</strong><span>选择网卡与允许的主机</span></div><div><b>03</b><strong>复制连接命令</strong><span>远端直接使用标准 adb</span></div></div></section>
+  <section id="welcome" class="welcome"><h2>暂无共享组</h2></section>
   <section id="workspace" hidden>
     <div class="group-heading"><div><span id="group-state" class="badge">尚未保存</span><span id="draft-label" class="quiet"></span></div><button id="delete-group" class="danger-text">删除共享组</button></div>
     <div class="apply-bar"><span id="apply-hint" class="quiet">配置只在保存后生效</span><div><button id="save" class="secondary">保存配置</button><button id="toggle" class="primary">保存并开始共享</button></div></div>
@@ -41,14 +42,16 @@ document.querySelector('#app')!.innerHTML = `
         <label>允许的来源 IP / 网段<textarea id="sources" rows="2" placeholder="192.168.1.0/24 或 192.168.1.20"></textarea></label><p class="field-help">多个地址用逗号或换行分隔。本机回环访问始终允许。</p></div>
         <div class="firewall-bar"><span>Windows 防火墙 · 专用 / 域网络</span><button id="firewall-add" class="text-btn">配置放行…</button><button id="firewall-remove" class="text-btn">移除规则…</button></div>
       </section>
-    </div><div class="details"><section class="card connect-card"><div class="section-head"><span class="step">03</span><div><h2>在远端使用</h2><p>远端电脑需要安装 ADB 工具。</p></div></div><div id="connection"></div></section><section class="card"><div class="section-head compact"><h2>当前连接</h2><span id="session-count" class="count">0</span></div><div id="sessions"></div></section><div class="scope-note"><strong>调试设备，保持原有方式。</strong><p>本地和远端可以同时使用 shell、logcat、文件传输等命令；操作冲突由使用者协调。</p></div></div></div>
+    </div><div class="details"><section class="card connect-card"><div class="section-head"><span class="step">03</span><div><h2>在远端使用</h2><p>远端电脑需要安装 ADB 工具。</p></div></div><div id="connection"></div></section><section class="card"><div class="section-head compact"><h2>当前连接</h2><span id="session-count" class="count">0</span></div><div id="sessions"></div></section></div></div>
   </section>
   <details class="logs"><summary>运行日志 <span id="log-count"></span></summary><pre id="logs"></pre><p id="config-path" class="quiet"></p></details>
   </main>
   <dialog id="settings-dialog"><form id="settings-form"><span class="eyebrow">LOCAL ADB</span><h2>本机 ADB 设置</h2><p class="quiet">连接本机已有 ADB Server，设备无需改为无线调试。</p><label>adb 可执行文件<input id="adb-path" placeholder="adb 或完整路径"></label><label>本机 Server 端口<input id="upstream-port" type="number" min="1" max="65535"></label><p class="field-help">运行中修改上游端口前，请先停止所有共享组。</p><div class="dialog-actions"><button type="button" id="start-adb" class="secondary">启动本机 ADB</button><button type="button" id="close-settings" class="secondary">取消</button><button type="submit" class="primary">保存</button></div></form></dialog>
-  <dialog id="confirm-dialog"><h2 id="confirm-title"></h2><p id="confirm-text"></p><div class="dialog-actions"><button id="confirm-no" class="secondary">取消</button><button id="confirm-yes" class="primary">确认</button></div></dialog>`;
+  <dialog id="confirm-dialog"><h2 id="confirm-title"></h2><p id="confirm-text"></p><div class="dialog-actions"><button id="confirm-no" class="secondary">取消</button><button id="confirm-yes" class="primary">确认</button></div></dialog>
+  <dialog id="shutdown-dialog"><h2 id="shutdown-title">正在退出</h2><p id="shutdown-text">正在停止共享并清理防火墙规则…</p><div id="shutdown-actions" class="dialog-actions" hidden><button id="shutdown-back" class="secondary">返回程序</button><button id="shutdown-retry" class="primary">重试退出</button></div></dialog>`;
 
-function notify(text: string, error = false) { const n = $('notice'); n.hidden = false; n.className = error ? 'error' : 'success'; n.textContent = text; }
+function clearNotice() { clearTimeout(noticeTimer); $('notice').hidden = true; $('notice').textContent = ''; }
+function notify(text: string, error = false) { clearNotice(); const n = $('notice'); n.hidden = false; n.className = error ? 'error' : 'success'; n.textContent = text; if (!error) noticeTimer = setTimeout(clearNotice, 3000); }
 function confirmAction(title: string, text: string): Promise<boolean> {
   $('confirm-title').textContent = title; $('confirm-text').textContent = text;
   const dialog = $<HTMLDialogElement>('confirm-dialog'); dialog.showModal();
@@ -79,8 +82,8 @@ function renderSide() {
 }
 function renderEditor() {
   $('welcome').hidden = !!draft; $('workspace').hidden = !draft;
+  $('title').textContent = draft ? '共享组配置' : '共享组';
   if (!draft) return;
-  $('title').textContent = '管理共享组';
   $<HTMLInputElement>('group-name').value = draft.name;
   $<HTMLInputElement>('port').value = String(draft.port);
   $<HTMLTextAreaElement>('sources').value = draft.sources.join('\n');
@@ -120,8 +123,9 @@ function renderState() {
   $<HTMLButtonElement>('toggle').disabled = busy;
   $('toggle').textContent = r ? '停止共享' : dirty ? '保存并开始共享' : '开始共享';
   $('toggle').className = r ? 'stop-button' : 'primary';
-  $<HTMLButtonElement>('delete-group').disabled = disabled || busy;
-  for (const id of ['firewall-add','firewall-remove']) $<HTMLButtonElement>(id).disabled = busy || dirty || draft.address.startsWith('127.');
+  $<HTMLButtonElement>('delete-group').disabled = busy;
+  $<HTMLButtonElement>('firewall-add').disabled = busy || dirty || draft.address.startsWith('127.');
+  $<HTMLButtonElement>('firewall-remove').disabled = busy || !data.config.groups.some(g => g.id === draft!.id);
   $('apply-hint').textContent = disabled ? '先停止共享，即可修改本组配置' : dirty ? '修改尚未应用到共享入口' : '配置已保存，可开始共享';
   const cmd = commands();
   $('connection').innerHTML = `<div class="endpoint"><span>${draft.address.startsWith('127.') ? '仅供本机测试' : '共享入口'}</span><strong>${esc(draft.address)}<em>:${draft.port}</em></strong><small>${running ? '监听已就绪 · 远端连通还取决于路由与防火墙' : '启动共享后，这个入口才会接受连接'}</small></div>${dirty ? '<p class="draft-warning">以下命令为草稿预览，保存后使用。</p>' : ''}${cmd.map((c,i) => `<div class="command"><span>${i === 0 ? '查看组内设备' : '打开设备 shell'}</span><code>${esc(c)}</code><button class="text-btn copy" data-command="${i}">复制</button></div>`).join('')}<p class="connection-note">在获准的远端主机执行。不需要在 Android 设备上开启网络 ADB。</p>`;
@@ -163,7 +167,7 @@ function openSettings() {
   $<HTMLInputElement>('upstream-port').value = String(data.config.upstreamPort);
   $<HTMLDialogElement>('settings-dialog').showModal();
 }
-$('new-group').onclick = $('new-bottom').onclick = $('create-first').onclick = () => void newGroup();
+$('new-bottom').onclick = () => void newGroup();
 $('settings').onclick = openSettings;
 $('close-settings').onclick = () => $<HTMLDialogElement>('settings-dialog').close();
 $('refresh').onclick = () => void action(async () => {await refreshDevices(); await sync(); if (!connected) notify(adbError, true);});
@@ -179,8 +183,15 @@ $('toggle').onclick = () => void action(async () => {
   await sync(); renderEditor();
 });
 $('delete-group').onclick = async () => {
-  if (!draft || !await confirmAction('删除这个共享组？', '设备本身不受影响。若配置过防火墙规则，请先点击“移除规则”。')) return;
-  void action(async () => { const config = structuredClone(data.config); config.groups = config.groups.filter(g => g.id !== draft!.id); await invoke('save_config', {config}); draft = null; dirty = false; await sync(); renderEditor(); notify('共享组已删除'); });
+  if (!draft || !await confirmAction('删除这个共享组？', '将自动停止该组共享并移除防火墙规则。设备本身不受影响。')) return;
+  void action(async () => {
+    clearNotice();
+    try { if (data.config.groups.some(g => g.id === draft!.id)) await invoke('delete_group', {id: draft!.id}); }
+    catch (e) { await sync(); renderEditor(); throw e; }
+    draft = null; dirty = false; await sync();
+    if (data.config.groups[0]) draft = structuredClone(data.config.groups[0]);
+    renderEditor();
+  });
 };
 for (const remove of [false,true]) $(remove ? 'firewall-remove' : 'firewall-add').onclick = () => void action(async () => {
   await invoke('firewall', { id: draft!.id, remove }); notify(remove ? '防火墙规则已移除' : '防火墙规则已配置，仅适用于专用 / 域网络');
@@ -195,9 +206,21 @@ $('start-adb').onclick = () => void action(async () => {
   $<HTMLDialogElement>('settings-dialog').close(); notify('本机 ADB 已启动');
 });
 async function boot() {
+  await listen<{ error: string | null }>('shutdown-state', async ({ payload }) => {
+    const dialog = $<HTMLDialogElement>('shutdown-dialog');
+    $<HTMLDialogElement>('settings-dialog').close(); $<HTMLDialogElement>('confirm-dialog').close();
+    $('shutdown-title').textContent = payload.error ? '退出未完成' : '正在退出';
+    $('shutdown-text').textContent = payload.error ? `共享已停止，但防火墙规则清理未完成。${payload.error}` : '正在停止共享并清理防火墙规则…';
+    $('shutdown-actions').hidden = !payload.error;
+    if (!dialog.open) dialog.showModal();
+    if (payload.error) { await sync(); renderEditor(); }
+  });
   try { await sync(); if (data.configError) notify(`配置加载失败，请检查 ${data.configPath} 后重启：${data.configError}`,true); if (data.config.groups[0]) {draft = structuredClone(data.config.groups[0]); renderEditor();} await refreshDevices(); }
   catch (e) {notify(`应用初始化失败：${e}`,true);}
   setInterval(() => { if (!busy) void sync().catch(e => notify(String(e),true)); },2000);
   setInterval(() => { if (!busy) void refreshDevices(); },4000);
 }
+$<HTMLDialogElement>('shutdown-dialog').oncancel = e => e.preventDefault();
+$('shutdown-back').onclick = () => $<HTMLDialogElement>('shutdown-dialog').close();
+$('shutdown-retry').onclick = () => void invoke('request_exit').catch(e => notify(String(e),true));
 void boot();
