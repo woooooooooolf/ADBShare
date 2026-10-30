@@ -26,6 +26,10 @@ adb -H 192.168.1.10 -P 15037 -s SERIAL push test.txt /data/local/tmp/
 
 配置保存于 EXE 同级的 `data/config.json`；请放在可写目录。`ADB_SHARE_DATA_DIR` 可以覆盖配置目录。损坏配置会显示错误并阻止覆盖，需要修复或移走后重启。
 
+侧栏下方的“本机设备列表 N”展示实际发现的设备，点击可查看完整列表；“本机 ADB 设置”为独立按钮。最底部三个方形图标分别切换语言、切换主题和打开关于页。语言与主题偏好会保存在本机，切换不会丢失当前编辑内容。两套配色分别使用白色 / 淡紫 / 草绿和黑色 / 天蓝 / 黄色，均无阴影、无渐变。
+
+关于页显示名称、版本、实际构建时间、作者和 GPLv3，并可离线阅读项目许可证和按组件查看第三方声明。
+
 防火墙规则以组 UUID 标识。普通“停止共享”关闭连接，删除组和退出程序自动清理规则。仅存在待清理规则时请求 UAC，退出时合并清理多组规则。`data/firewall-rules.json` 记录尚需清理的规则，以便失败或重启后重试，也会识别此前版本为当前 EXE 创建的遗留规则。移动 EXE 后需要重新配置规则。
 
 ## 无真机演示
@@ -44,6 +48,7 @@ Windows 开发需要 Rust MSVC、Visual Studio C++ Build Tools、Node.js 和 Web
 
 ```powershell
 npm ci
+cargo fetch --locked --target x86_64-pc-windows-msvc --manifest-path src-tauri/Cargo.toml
 npm run tauri -- dev
 npm run build
 npm test
@@ -51,6 +56,8 @@ npm run build:app
 ```
 
 编译产物为 `src-tauri/target/release/adbshare.exe`。执行 `scripts/package.ps1` 可复制为命名产物并生成 SHA256SUMS。
+
+`npm run build:app` 在构建时注入时间戳，并生成 Windows 依赖声明。`npm run notices:check` 核对声明是否与锁定依赖一致；声明生成使用已缓存的 crate 原始许可证。未随 crate 打包的原文在 `licenses/supplements` 中保存，其上游版本和来源可追溯。
 
 标准 adb 集成测试会启动原型的 headless 模式和虚拟上游，只在回环地址运行，不触碰真实设备或防火墙：
 
@@ -75,5 +82,11 @@ npm run test:integration
 - 同时打开多个应用实例尚不属于推荐用法；本工具未实现跨实例配置协调。
 
 工程基线见 [docs/design-baseline.md](docs/design-baseline.md)，测试与待验证项见 [docs/validation.md](docs/validation.md)。
+
+## 许可证与源码
+
+Copyright © 2026 wooooooooolf。ADBShare 采用 [GPLv3（GPL-3.0-only）](LICENSE)。第三方组件保留各自许可证，详见 [第三方声明](THIRD_PARTY_NOTICES.txt)。打包目录提供 EXE、许可证、第三方声明和对应源码 ZIP。源码包只包含构建所需的工程文件，不包含本机配置、缓存和 Git 元数据。
+
+当前只进行本地开发，公开仓库待界面与流程调整完成后再建立。
 
 ![共享组原型界面](docs/images/sharing.png)

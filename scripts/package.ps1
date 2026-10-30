@@ -6,6 +6,8 @@ $dir = Join-Path $root 'artifacts'
 New-Item -ItemType Directory -Path $dir -Force | Out-Null
 $name = 'ADBShare-0.1.0-windows-x64.exe'
 Copy-Item -LiteralPath $exe -Destination (Join-Path $dir $name) -Force
+Copy-Item -LiteralPath (Join-Path $root 'LICENSE') -Destination (Join-Path $dir 'LICENSE') -Force
+Copy-Item -LiteralPath (Join-Path $root 'THIRD_PARTY_NOTICES.txt') -Destination (Join-Path $dir 'THIRD_PARTY_NOTICES.txt') -Force
 $readme = @'
 # ADBShare 0.1.0 原型
 
@@ -25,9 +27,16 @@ $readme = @'
 本原型已通过模拟上游、标准 adb 客户端和实际窗口交互测试。真机、双机 LAN 和实际 UAC 防火墙操作仍待验证。
 forward/reverse、IDE 和投屏不属于本原型支持范围。
 完整源码、虚拟设备演示和验证记录位于 adb_share 工程目录。
+侧栏底部可切换语言、主题和打开关于页；本机设备入口可查看全部设备。
+许可证：GPLv3（GPL-3.0-only），作者：wooooooooolf。
+关于页内置许可证与第三方声明；本目录另附许可证、声明及对应源码包。
 '@
 [IO.File]::WriteAllText((Join-Path $dir 'README.md'), $readme + "`n")
-$hash = (Get-FileHash -LiteralPath (Join-Path $dir $name) -Algorithm SHA256).Hash.ToLowerInvariant()
-[IO.File]::WriteAllText((Join-Path $dir 'SHA256SUMS'), "$hash  $name`n")
+& (Join-Path $PSScriptRoot 'package-source.ps1')
+$sums = @($name,'ADBShare-0.1.0-source.zip','LICENSE','THIRD_PARTY_NOTICES.txt') | ForEach-Object {
+    $hash = (Get-FileHash -LiteralPath (Join-Path $dir $_) -Algorithm SHA256).Hash.ToLowerInvariant()
+    "$hash  $_"
+}
+[IO.File]::WriteAllText((Join-Path $dir 'SHA256SUMS'), ($sums -join "`n") + "`n")
 Write-Output (Join-Path $dir $name)
-Write-Output "SHA256 $hash"
+Write-Output ($sums[0])
