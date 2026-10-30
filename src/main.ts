@@ -34,13 +34,13 @@ document.querySelector('#app')!.innerHTML = `
   <section id="welcome" class="welcome"><div class="hero-icon">${glyph}</div><span class="eyebrow">从一个共享组开始</span><h2>连接在这里，调试在任何一台电脑。</h2><p>把本机的 ADB 设备分组，通过指定网卡共享给局域网中的电脑。</p><button id="create-first" class="primary">＋ 创建第一个共享组</button><div class="intro-steps"><div><b>01</b><strong>选择设备</strong><span>保留本地连接与访问</span></div><div><b>02</b><strong>设置访问范围</strong><span>选择网卡与允许的主机</span></div><div><b>03</b><strong>复制连接命令</strong><span>远端直接使用标准 adb</span></div></div></section>
   <section id="workspace" hidden>
     <div class="group-heading"><div><span id="group-state" class="badge">尚未保存</span><span id="draft-label" class="quiet"></span></div><button id="delete-group" class="danger-text">删除共享组</button></div>
+    <div class="apply-bar"><span id="apply-hint" class="quiet">配置只在保存后生效</span><div><button id="save" class="secondary">保存配置</button><button id="toggle" class="primary">保存并开始共享</button></div></div>
     <div class="columns"><div class="configuration"><section class="card"><div class="section-head"><span class="step">01</span><div><h2>选择共享设备</h2><p>允许多台主机连接，由使用者协调设备操作。</p></div><span id="member-count" class="count"></span></div><div id="devices"></div></section>
       <section class="card"><div class="section-head"><span class="step">02</span><div><h2>设置共享入口</h2><p>选择局域网网卡，限定可以接入的主机。</p></div></div>
         <div class="form"><label>共享组名称<input id="group-name" maxlength="60" placeholder="例如：Android 调试组"></label><div class="form-row"><label>监听网卡<select id="address"></select></label><label class="port">端口<input id="port" type="number" min="1" max="65535"></label></div>
         <label>允许的来源 IP / 网段<textarea id="sources" rows="2" placeholder="192.168.1.0/24 或 192.168.1.20"></textarea></label><p class="field-help">多个地址用逗号或换行分隔。本机回环访问始终允许。</p></div>
         <div class="firewall-bar"><span>Windows 防火墙 · 专用 / 域网络</span><button id="firewall-add" class="text-btn">配置放行…</button><button id="firewall-remove" class="text-btn">移除规则…</button></div>
       </section>
-      <div class="apply-bar"><span id="apply-hint" class="quiet">配置只在保存后生效</span><div><button id="save" class="secondary">保存配置</button><button id="toggle" class="primary">保存并开始共享</button></div></div>
     </div><div class="details"><section class="card connect-card"><div class="section-head"><span class="step">03</span><div><h2>在远端使用</h2><p>远端电脑需要安装 ADB 工具。</p></div></div><div id="connection"></div></section><section class="card"><div class="section-head compact"><h2>当前连接</h2><span id="session-count" class="count">0</span></div><div id="sessions"></div></section><div class="scope-note"><strong>调试设备，保持原有方式。</strong><p>本地和远端可以同时使用 shell、logcat、文件传输等命令；操作冲突由使用者协调。</p></div></div></div>
   </section>
   <details class="logs"><summary>运行日志 <span id="log-count"></span></summary><pre id="logs"></pre><p id="config-path" class="quiet"></p></details>
@@ -194,7 +194,6 @@ $('start-adb').onclick = () => void action(async () => {
   await invoke('save_config', {config}); await invoke('start_adb'); await sync(); await refreshDevices();
   $<HTMLDialogElement>('settings-dialog').close(); notify('本机 ADB 已启动');
 });
-window.addEventListener('beforeunload', e => {if (dirty) e.preventDefault();});
 async function boot() {
   try { await sync(); if (data.configError) notify(`配置加载失败，请检查 ${data.configPath} 后重启：${data.configError}`,true); if (data.config.groups[0]) {draft = structuredClone(data.config.groups[0]); renderEditor();} await refreshDevices(); }
   catch (e) {notify(`应用初始化失败：${e}`,true);}

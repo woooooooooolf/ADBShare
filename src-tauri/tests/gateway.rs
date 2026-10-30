@@ -258,3 +258,53 @@ async fn occupied_port_fails_before_reporting_started() {
         .is_err());
     drop(listener);
 }
+
+#[tokio::test]
+async fn source_policy_is_enforced_on_a_real_adapter_socket() {
+    let ip = if_addrs::get_if_addrs()
+        .unwrap()
+        .into_iter()
+        .find_map(|interface| {
+            if let if_addrs::IfAddr::V4(v) = interface.addr {
+                if v.ip.is_private() {
+                    return Some(v.ip);
+                }
+            }
+            None
+        });
+    let Some(ip) = ip else {
+        eprintln!("SKIP: no private IPv4 adapter");
+        return;
+    };
+    let lab = lab().await;
+    let mut g = group(&["A"]);
+    g.address = ip;
+    // This exact source is intentionally different from the host address.
+    g.sources = vec![if ip.to_string() == "10.254.254.254" {
+        "10.254.254.253"
+    } else {
+        "10.254.254.254"
+    }
+    .into()];
+    let r = gateway::start(g.clone(), lab.port, Default::default())
+        .await
+        .unwrap();
+    let mut c = TcpStream::connect((g.address, g.port)).await.unwrap();
+    let mut byte = [0];
+    let denied = tokio::time::timeout(Duration::from_secs(3), c.read(&mut byte))
+        .await
+        .unwrap();
+    assert!(
+        matches!(denied, Ok(0) | Err(_)),
+        "disallowed source must close without serving ADB"
+    );
+    r.stop().await;
+    g.sources = vec![ip.to_string()];
+    let r = gateway::start(g.clone(), lab.port, Default::default())
+        .await
+        .unwrap();
+    let mut c = open(&g, "host:devices-l").await;
+    adb::read_status(&mut c).await.unwrap();
+    assert!(adb::read_frame(&mut c).await.unwrap().contains("A device"));
+    r.stop().await;
+}
