@@ -32,7 +32,7 @@ document.querySelector('#app')!.innerHTML = `
   </aside>
   <main><header><h1 id="title">共享组</h1><div class="header-actions"><span id="summary" class="quiet"></span><button id="refresh" class="secondary">↻ 刷新设备</button></div></header>
   <div id="notice" role="status" hidden></div>
-  <section id="welcome" class="welcome"><h2>暂无共享组</h2></section>
+  <section id="welcome" class="welcome"><div class="welcome-icon">${glyph}</div><h2>局域网 ADB 设备共享</h2><p class="welcome-description">将本机设备分组，供局域网中的电脑使用标准 ADB 工具访问。</p><div class="welcome-steps"><span><b>01</b>选择设备</span><span><b>02</b>设置共享入口</span><span><b>03</b>在远端使用</span></div></section>
   <section id="workspace" hidden>
     <div class="group-heading"><div><span id="group-state" class="badge">尚未保存</span><span id="draft-label" class="quiet"></span></div><button id="delete-group" class="danger-text">删除共享组</button></div>
     <div class="apply-bar"><span id="apply-hint" class="quiet">配置只在保存后生效</span><div><button id="save" class="secondary">保存配置</button><button id="toggle" class="primary">保存并开始共享</button></div></div>

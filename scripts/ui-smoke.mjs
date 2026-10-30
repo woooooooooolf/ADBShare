@@ -52,8 +52,8 @@ try{
   await writeFile(ledger,'[]');await page.locator('#toggle').click();await expect(page.locator('#group-state')).toContainText('共享中');
   await page.locator('#delete-group').click();await page.locator('#confirm-yes').click();await expect(page.locator('#welcome')).toBeVisible();
   await expect(page.locator('#notice')).toBeHidden();await expect(page.locator('#groups .group-item')).toHaveCount(0);
-  await expect(page.locator('#welcome')).toHaveText('暂无共享组');await expect(page.locator('#welcome button')).toHaveCount(0);
-  assert.equal(JSON.parse(await readFile(file,'utf8')).groups.length,0);console.log('PASS running-group deletion and minimal empty state without success banner');
+  await expect(page.locator('#welcome h2')).toHaveText('局域网 ADB 设备共享');await expect(page.locator('#welcome button')).toHaveCount(0);
+  assert.equal(JSON.parse(await readFile(file,'utf8')).groups.length,0);console.log('PASS running-group deletion and concise welcome page without success banner');
   await page.screenshot({path:path.join(directory,'welcome.png'),fullPage:true});
   await page.locator('#new-bottom').click();await page.locator('#address').selectOption('127.0.0.1');await name.fill('新建流程');await page.locator('[data-serial="SIM-PIXEL"]').check();await page.locator('#sources').fill('8.8.8.8');await page.locator('#save').click();await expect(page.locator('#notice')).toContainText('私有 IPv4');
   await page.locator('#sources').fill('127.0.0.1');await page.locator('#save').click();await expect(page.locator('#draft-label')).toHaveText('配置已保存');console.log('PASS empty state, creation and invalid-source feedback');
