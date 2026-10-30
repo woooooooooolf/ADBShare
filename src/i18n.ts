@@ -1,0 +1,107 @@
+export type Language = 'zh' | 'en';
+export type Theme = 'light' | 'dark';
+const zh = {
+  tagline: '局域网设备共享', groups: '共享组', groupConfig: '共享组配置', newGroup: '新建共享组', newName: '新的共享组',
+  localDevices: '本机设备列表', settings: '本机 ADB 设置', checking: '正在连接 ADB', adbOffline: 'ADB 未连接',
+  refresh: '刷新', welcomeTitle: '局域网 ADB 设备共享', welcomeDescription: '将本机设备分组，供局域网中的电脑使用 ADB 工具访问。',
+  selectDevices: '选择设备', endpoint: '共享入口', remoteUse: '远端访问',
+  deleteGroup: '删除组', save: '保存', start: '开始共享', saveStart: '保存并共享', stop: '停止共享',
+  saved: '已保存', unsaved: '未保存', stopped: '已停止', running: '共享中', failed: '监听异常', newState: '新建组',
+  selectedCount: '{n} 已选', runningCount: '{n} 组共享中', deviceCount: '{n} 台设备',
+  deviceHint: '勾选组内设备。', endpointHint: '选择网卡和允许接入的主机。',
+  name: '组名', namePlaceholder: '例如：Android 调试组', adapter: '网卡', port: '端口', sources: '来源 IP / 网段',
+  sourcesPlaceholder: '192.168.1.0/24 或 192.168.1.20', sourceHint: '多个地址用逗号或换行分隔。',
+  firewall: '防火墙 · 专用 / 域网络', firewallAdd: '配置放行…', firewallRemove: '移除规则…',
+  editStopped: '停止共享后可编辑', changesPending: '修改尚未保存', readyToStart: '配置已保存',
+  remoteHint: '在远端电脑执行以下命令。', connections: '当前连接', logs: '运行日志', noLogs: '暂无日志', configPath: '配置文件',
+  serial: '序列号', model: '型号', state: '状态', transport: '连接方式', usb: 'USB', localTransport: '网络 / 模拟器',
+  online: '已连接', offline: '离线', unauthorized: '待授权', absent: '暂未连接', assigned: '已分配设备',
+  noDevices: '未发现设备', connectDevice: '连接设备，并允许 USB 调试。', openSettings: 'ADB 设置',
+  localOnly: '仅本机', unavailableAddress: '当前不可用', listening: '监听已就绪', notListening: '尚未启动',
+  commandPreview: '未保存配置的命令预览', listCommand: '查看设备', shellCommand: '打开 shell', copy: '复制',
+  noConnections: '等待连接', startForConnections: '暂无连接',
+  adbPath: 'ADB 路径', adbPathPlaceholder: 'adb 或完整路径', upstreamPort: '本机服务端口', startAdb: '启动 ADB',
+  settingsHint: '连接本机已有的 ADB 服务。', settingsPortHint: '修改端口前请停止全部共享。', cancel: '取消', close: '关闭', confirm: '确认',
+  discardTitle: '放弃修改？', discardText: '当前组的修改尚未保存。', deleteTitle: '删除共享组？', deleteText: '将停止该组共享并清理防火墙规则。',
+  copied: '命令已复制', groupSaved: '配置已保存', sharingStopped: '共享已停止', sharingStarted: '共享已启动', ruleRemoved: '规则已移除', ruleAdded: '规则已配置', settingsSaved: '设置已保存', adbStarted: 'ADB 已启动',
+  initializingFailed: '初始化失败', configFailed: '配置读取失败',
+  exiting: '正在退出', exitPending: '正在停止共享并清理规则…', exitFailed: '退出未完成', exitError: '规则清理未完成。', back: '返回程序', retryExit: '重试退出',
+  switchLanguage: '切换到英文', switchTheme: '切换主题', darkMode: '深色主题', lightMode: '浅色主题', about: '关于',
+  overview: '概览', projectLicense: '许可证', thirdParty: '第三方声明', component: '组件', version: '版本', buildTime: '构建时间', author: '作者', source: '源码', sourcePending: '仓库待公开',
+  legal: 'Copyright © 2026 {author}。按 GPLv3 提供，可依许可证修改与再分发，不附带担保。',
+  compliance: '第三方组件保留各自的许可证。下方可查看原始许可证和版权声明。', originalLicense: '许可证原文',
+  operationFailed: '操作失败，请检查设置后重试。', noUpstream: '无法连接本机 ADB，请检查设置或启动 ADB。',
+};
+type Key = keyof typeof zh;
+const en: Record<Key, string> = {
+  tagline: 'LAN device sharing', groups: 'Groups', groupConfig: 'Group settings', newGroup: 'New group', newName: 'New group',
+  localDevices: 'Local devices', settings: 'Local ADB settings', checking: 'Connecting to ADB', adbOffline: 'ADB unavailable',
+  refresh: 'Refresh', welcomeTitle: 'Share ADB devices on your LAN', welcomeDescription: 'Group local devices and access them from other computers with ADB.',
+  selectDevices: 'Select devices', endpoint: 'Sharing endpoint', remoteUse: 'Remote access',
+  deleteGroup: 'Delete group', save: 'Save', start: 'Start sharing', saveStart: 'Save and share', stop: 'Stop sharing',
+  saved: 'Saved', unsaved: 'Unsaved', stopped: 'Stopped', running: 'Sharing', failed: 'Listener failed', newState: 'New group',
+  selectedCount: '{n} selected', runningCount: '{n} groups sharing', deviceCount: '{n} devices',
+  deviceHint: 'Choose devices for this group.', endpointHint: 'Choose an adapter and allowed clients.',
+  name: 'Group name', namePlaceholder: 'e.g. Android debugging', adapter: 'Adapter', port: 'Port', sources: 'Source IP / subnet',
+  sourcesPlaceholder: '192.168.1.0/24 or 192.168.1.20', sourceHint: 'Separate addresses with commas or newlines.',
+  firewall: 'Firewall · Private / Domain', firewallAdd: 'Allow access…', firewallRemove: 'Remove rule…',
+  editStopped: 'Stop sharing to edit', changesPending: 'Changes not saved', readyToStart: 'Settings saved',
+  remoteHint: 'Run these commands on the remote computer.', connections: 'Connections', logs: 'Activity log', noLogs: 'No activity yet', configPath: 'Config file',
+  serial: 'Serial', model: 'Model', state: 'Status', transport: 'Transport', usb: 'USB', localTransport: 'Network / emulator',
+  online: 'Connected', offline: 'Offline', unauthorized: 'Unauthorized', absent: 'Not connected', assigned: 'Assigned device',
+  noDevices: 'No devices found', connectDevice: 'Connect a device and allow USB debugging.', openSettings: 'ADB settings',
+  localOnly: 'Local only', unavailableAddress: 'Currently unavailable', listening: 'Listener ready', notListening: 'Not started',
+  commandPreview: 'Command preview for unsaved settings', listCommand: 'List devices', shellCommand: 'Open shell', copy: 'Copy',
+  noConnections: 'Waiting for connections', startForConnections: 'No connections',
+  adbPath: 'ADB path', adbPathPlaceholder: 'adb or a full path', upstreamPort: 'Local server port', startAdb: 'Start ADB',
+  settingsHint: 'Connect to the existing local ADB server.', settingsPortHint: 'Stop all groups before changing the port.', cancel: 'Cancel', close: 'Close', confirm: 'Confirm',
+  discardTitle: 'Discard changes?', discardText: 'Changes to this group have not been saved.', deleteTitle: 'Delete this group?', deleteText: 'Sharing will stop and its firewall rule will be removed.',
+  copied: 'Command copied', groupSaved: 'Settings saved', sharingStopped: 'Sharing stopped', sharingStarted: 'Sharing started', ruleRemoved: 'Rule removed', ruleAdded: 'Rule configured', settingsSaved: 'Settings saved', adbStarted: 'ADB started',
+  initializingFailed: 'Initialization failed', configFailed: 'Could not read configuration',
+  exiting: 'Exiting', exitPending: 'Stopping sharing and removing firewall rules…', exitFailed: 'Could not exit', exitError: 'Firewall cleanup did not finish.', back: 'Return to app', retryExit: 'Retry exit',
+  switchLanguage: 'Switch to Chinese', switchTheme: 'Switch theme', darkMode: 'Dark theme', lightMode: 'Light theme', about: 'About',
+  overview: 'Overview', projectLicense: 'License', thirdParty: 'Third-party notices', component: 'Component', version: 'Version', buildTime: 'Built', author: 'Author', source: 'Source', sourcePending: 'Public repository pending',
+  legal: 'Copyright © 2026 {author}. Licensed under GPLv3. You may modify and redistribute it under the license, without warranty.',
+  compliance: 'Third-party components retain their own licenses. Original license texts and copyright notices are available below.', originalLicense: 'Original license text',
+  operationFailed: 'Operation failed. Check the settings and try again.', noUpstream: 'Cannot reach local ADB. Check the settings or start ADB.',
+};
+const stored = (() => { try { const value=JSON.parse(localStorage.getItem('adbshare.preferences') || '{}');return value && typeof value==='object'?value:{}; } catch { return {}; } })();
+export let language: Language = stored.language === 'en' ? 'en' : 'zh';
+export let theme: Theme = stored.theme === 'dark' ? 'dark' : 'light';
+export function t(key: Key, args: Record<string,string|number> = {}): string {
+  return Object.entries(args).reduce((s,[k,v])=>s.replaceAll(`{${k}}`,String(v)), (language==='zh'?zh:en)[key]);
+}
+export function preferences(next: { language?: Language; theme?: Theme } = {}) {
+  language = next.language || language; theme = next.theme || theme;
+  document.documentElement.lang = language === 'zh' ? 'zh-CN' : 'en';
+  document.documentElement.dataset.theme = theme;
+  if (Object.keys(next).length) localStorage.setItem('adbshare.preferences',JSON.stringify({language,theme}));
+}
+export function translate(root: ParentNode = document) {
+  root.querySelectorAll<HTMLElement>('[data-i18n]').forEach(el=>el.textContent=t(el.dataset.i18n as Key));
+  root.querySelectorAll<HTMLInputElement>('[data-placeholder]').forEach(el=>el.placeholder=t(el.dataset.placeholder as Key));
+}
+export function errorText(value: unknown): string {
+  const text = String(value);
+  if (language==='zh') return text;
+  const known: [string,string][] = [
+    ['共享组已保留','Sharing stopped. Firewall cleanup failed; the group was kept. Retry deletion.'],
+    ['防火墙清理记录无法读取','The firewall cleanup record could not be read.'],
+    ['私有 IPv4','Source addresses must be within private IPv4 ranges.'],
+    ['无法连接本机 ADB',en.noUpstream], ['至少一台设备','Select at least one device.'],
+    ['请先选择至少一台设备','Select at least one device.'], ['共享组监听地址和端口重复','Another group uses this address and port.'],
+    ['请填写组名','Enter a name, valid adapter address and port.'],['来源','Enter at least one valid source address or subnet.'],
+    ['请先停止全部共享','Stop all groups before changing the upstream port.'],['请先停止该组','Stop this group before editing.'],
+    ['防火墙仍存在','Firewall rules remain. Retry cleanup.'],['防火墙操作失败','Firewall operation failed or elevation was canceled.'],
+    ['配置读取错误','Fix the configuration file before continuing.'],['无效','Invalid configuration value.'],
+    ['找不到','Not found.'],['未找到','Not found.'],['正在退出','The app is shutting down.'],['该组已运行','This group is already running.'],
+    ['启动 ADB 超时','Starting ADB timed out.'],['配置版本','Unsupported configuration version or port.'],
+  ];
+  return known.find(([part])=>text.includes(part))?.[1] || (/[\u3400-\u9fff]/.test(text) ? en.operationFailed : text);
+}
+export function logText(text: string) {
+  if (language==='zh') return text;
+  return text.replaceAll('开始共享','Sharing started').replaceAll('已停止，连接已关闭','Stopped; connections closed')
+    .replaceAll('拒绝连接','Connection denied').replaceAll('监听失败','Listener failed').replaceAll('退出清理失败','Exit cleanup failed')
+    .replaceAll('配置加载失败，请检查','Configuration load failed; check');
+}
