@@ -3,6 +3,8 @@ name = "adbshare"
 version = "0.1.0"
 edition = "2021"
 description = "Portable LAN ADB device sharing prototype"
+authors = ["wooooooooolf"]
+license = "GPL-3.0-only"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

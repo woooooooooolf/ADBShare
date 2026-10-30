@@ -54,6 +54,47 @@ pub struct Snapshot {
     config_error: Option<String>,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppInfo {
+    name: &'static str,
+    version: &'static str,
+    build_timestamp: u64,
+    author: &'static str,
+    license: &'static str,
+}
+#[tauri::command]
+pub fn app_info() -> AppInfo {
+    AppInfo {
+        name: "ADBShare",
+        version: env!("CARGO_PKG_VERSION"),
+        build_timestamp: env!("ADB_SHARE_BUILD_TIMESTAMP").parse().unwrap(),
+        author: env!("CARGO_PKG_AUTHORS"),
+        license: env!("CARGO_PKG_LICENSE"),
+    }
+}
+fn third_party_sections() -> impl Iterator<Item = &'static str> {
+    include_str!("../../THIRD_PARTY_NOTICES.txt")
+        .split("\n============================================================================\n")
+        .skip(1)
+}
+#[tauri::command]
+pub fn third_party_components() -> Vec<&'static str> {
+    third_party_sections()
+        .filter_map(|section| section.lines().next())
+        .collect()
+}
+#[tauri::command]
+pub fn license_document(kind: String, component: Option<usize>) -> Result<&'static str, String> {
+    match kind.as_str() {
+        "project" => Ok(include_str!("../../LICENSE")),
+        "thirdParty" => third_party_sections()
+            .nth(component.unwrap_or(0))
+            .ok_or_else(|| "Unknown component".into()),
+        _ => Err("Unknown license document".into()),
+    }
+}
+
 impl App {
     pub fn ensure_open(&self) -> Result<(), String> {
         if self.shutting_down.load(Ordering::SeqCst) {

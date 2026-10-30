@@ -69,7 +69,10 @@ fn main() {
             app::start_adb,
             app::firewall,
             app::delete_group,
-            app::request_exit
+            app::request_exit,
+            app::app_info,
+            app::license_document,
+            app::third_party_components
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {

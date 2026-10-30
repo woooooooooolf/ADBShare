@@ -1,6 +1,8 @@
 {
   "name": "adbshare",
   "version": "0.1.0",
+  "author": "wooooooooolf",
+  "license": "GPL-3.0-only",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,7 +11,9 @@
     "build": "npm run check && vite build",
     "tauri": "tauri",
     "test": "cargo test --locked --manifest-path src-tauri/Cargo.toml",
-    "build:app": "tauri build --no-bundle",
+    "build:app": "node scripts/build-app.mjs",
+    "notices": "node scripts/notices.mjs",
+    "notices:check": "node scripts/notices.mjs --check",
     "test:integration": "node scripts/integration.mjs",
     "test:ui": "node scripts/ui-smoke.mjs"
   },
