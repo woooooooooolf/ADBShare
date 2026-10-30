@@ -1,0 +1,17 @@
+{
+  "name": "adbshare",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "check": "tsc --noEmit",
+    "build": "npm run check && vite build",
+    "tauri": "tauri",
+    "test": "cargo test --locked --manifest-path src-tauri/Cargo.toml",
+    "build:app": "tauri build --no-bundle",
+    "test:integration": "node scripts/integration.mjs"
+  },
+  "dependencies": { "@tauri-apps/api": "^2" },
+  "devDependencies": { "@tauri-apps/cli": "^2", "typescript": "^5", "vite": "^7" }
+}
