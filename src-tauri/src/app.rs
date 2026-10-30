@@ -1,11 +1,19 @@
 use crate::{
     gateway::{self, Logs, Running, Session},
-    model::{self, Config, Group},
+    model::{self, Config},
     protocol,
 };
 use serde::Serialize;
-use std::{collections::HashMap, path::PathBuf, process::Command};
-use tauri::State;
+use std::{
+    collections::HashMap,
+    path::PathBuf,
+    process::Command,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+};
+use tauri::{Emitter, Manager, State};
 use tokio::sync::Mutex;
 
 pub struct App {
@@ -13,6 +21,9 @@ pub struct App {
     pub inner: Mutex<Inner>,
     pub logs: Logs,
     pub config_error: Option<String>,
+    pub firewall: Arc<crate::firewall::Firewall>,
+    pub shutting_down: AtomicBool,
+    pub shutdown_complete: AtomicBool,
 }
 pub struct Inner {
     pub config: Config,
@@ -41,6 +52,80 @@ pub struct Snapshot {
     config_path: String,
     logs: Vec<String>,
     config_error: Option<String>,
+}
+
+impl App {
+    pub fn ensure_open(&self) -> Result<(), String> {
+        if self.shutting_down.load(Ordering::SeqCst) {
+            return Err("正在退出并清理规则，请稍候".into());
+        }
+        Ok(())
+    }
+    pub async fn delete_group(&self, id: &str) -> Result<(), String> {
+        let mut inner = self.inner.lock().await;
+        self.ensure_open()?;
+        if self.config_error.is_some() {
+            return Err("请先修复配置读取错误".into());
+        }
+        if !inner.config.groups.iter().any(|g| g.id == id) {
+            return Err("未找到分组".into());
+        }
+        if let Some(r) = inner.running.remove(id) {
+            r.stop().await;
+        }
+        let firewall = self.firewall.clone();
+        let target = id.to_owned();
+        tokio::task::spawn_blocking(move || firewall.remove_group(&target))
+            .await
+            .map_err(|e| e.to_string())?
+            .map_err(|e| format!("共享已停止，但规则清理未完成；共享组已保留，可重试删除。{e}"))?;
+        let mut config = inner.config.clone();
+        config.groups.retain(|g| g.id != id);
+        model::save(&self.path, &config)?;
+        inner.config = config;
+        Ok(())
+    }
+    pub async fn cleanup(&self) -> Result<(), String> {
+        let mut inner = self.inner.lock().await;
+        for (_, r) in inner.running.drain() {
+            r.stop().await;
+        }
+        let groups = inner.config.groups.clone();
+        let firewall = self.firewall.clone();
+        tokio::task::spawn_blocking(move || firewall.cleanup(&groups))
+            .await
+            .map_err(|e| e.to_string())?
+    }
+}
+
+pub fn begin_shutdown(handle: tauri::AppHandle) {
+    let app = handle.state::<App>();
+    if app.shutting_down.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    let _ = handle.emit("shutdown-state", serde_json::json!({"error":null}));
+    tauri::async_runtime::spawn(async move {
+        let app = handle.state::<App>();
+        match app.cleanup().await {
+            Ok(()) => {
+                app.shutdown_complete.store(true, Ordering::SeqCst);
+                handle.exit(0);
+            }
+            Err(error) => {
+                gateway::log(&app.logs, format!("退出清理失败：{error}"));
+                app.shutting_down.store(false, Ordering::SeqCst);
+                let _ = handle.emit("shutdown-state", serde_json::json!({"error":error}));
+            }
+        }
+    });
+}
+#[tauri::command]
+pub fn request_exit(handle: tauri::AppHandle) {
+    begin_shutdown(handle);
+}
+#[tauri::command]
+pub async fn delete_group(id: String, app: State<'_, App>) -> Result<(), String> {
+    app.delete_group(&id).await
 }
 
 pub fn interfaces() -> Vec<Interface> {
@@ -136,6 +221,15 @@ pub async fn save_config(config: Config, app: State<'_, App>) -> Result<(), Stri
     }
     config.validate()?;
     let mut inner = app.inner.lock().await;
+    app.ensure_open()?;
+    if inner
+        .config
+        .groups
+        .iter()
+        .any(|old| !config.groups.iter().any(|new| new.id == old.id))
+    {
+        return Err("请使用删除共享组操作，以自动清理规则".into());
+    }
     if !inner.running.is_empty() && config.upstream_port != inner.config.upstream_port {
         return Err("请先停止全部共享，再修改上游端口".into());
     }
@@ -153,6 +247,7 @@ pub async fn save_config(config: Config, app: State<'_, App>) -> Result<(), Stri
 #[tauri::command]
 pub async fn start_group(id: String, app: State<'_, App>) -> Result<(), String> {
     let mut inner = app.inner.lock().await;
+    app.ensure_open()?;
     if inner.running.contains_key(&id) {
         return Err("该组已运行，请先停止".into());
     }
@@ -183,6 +278,7 @@ pub async fn stop_group(id: String, app: State<'_, App>) -> Result<(), String> {
 #[tauri::command]
 pub async fn start_adb(app: State<'_, App>) -> Result<(), String> {
     let inner = app.inner.lock().await;
+    app.ensure_open()?;
     let path = inner.config.adb_path.clone();
     let port = inner.config.upstream_port;
     drop(inner);
@@ -204,10 +300,11 @@ pub async fn start_adb(app: State<'_, App>) -> Result<(), String> {
         Err(String::from_utf8_lossy(&result.stderr).to_string())
     }
 }
-// Firewall management is explicit. The main UI and gateway remain unprivileged.
+
 #[tauri::command]
 pub async fn firewall(id: String, remove: bool, app: State<'_, App>) -> Result<(), String> {
     let inner = app.inner.lock().await;
+    app.ensure_open()?;
     let group = inner
         .config
         .groups
@@ -215,91 +312,20 @@ pub async fn firewall(id: String, remove: bool, app: State<'_, App>) -> Result<(
         .find(|g| g.id == id)
         .ok_or("未找到分组")?
         .clone();
-    drop(inner);
-    if group.address.is_loopback() {
+    let firewall = app.firewall.clone();
+    if !remove && group.address.is_loopback() {
         return Err("仅本机模式不需要防火墙规则".into());
     }
-    tokio::task::spawn_blocking(move || elevate_firewall(&group, remove))
-        .await
-        .map_err(|e| e.to_string())?
-}
-fn elevate_firewall(group: &Group, remove: bool) -> Result<(), String> {
-    if !cfg!(windows) {
-        return Err("此原型仅实现 Windows 防火墙配置".into());
-    }
-    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-    let quote = |s: &str| format!("'{}'", s.replace('\'', "''"));
-    let args = format!(
-        "--firewall-helper {} {} {} {} {}",
-        if remove { "remove" } else { "add" },
-        group.id,
-        group.address,
-        group.port,
-        group.sources.join(",")
-    );
-    let script=format!("$ErrorActionPreference='Stop'; try {{ $p=Start-Process -FilePath {} -ArgumentList {} -Verb RunAs -WindowStyle Hidden -Wait -PassThru; exit $p.ExitCode }} catch {{ Write-Error $_; exit 1 }}",quote(&exe.to_string_lossy()),quote(&args));
-    let result = command("powershell.exe")
-        .args(["-NoProfile", "-NonInteractive", "-Command", &script])
-        .output()
-        .map_err(|e| e.to_string())?;
-    if result.status.success() {
-        Ok(())
-    } else {
-        Err(format!(
-            "防火墙配置未完成（可能取消了 UAC）：{}",
-            String::from_utf8_lossy(&result.stderr)
-        ))
-    }
-}
-pub fn firewall_helper(args: &[String]) -> Result<(), String> {
-    if args.len() != 6 {
-        return Err("Invalid firewall arguments".into());
-    }
-    uuid::Uuid::parse_str(&args[2]).map_err(|e| e.to_string())?;
-    let address: std::net::Ipv4Addr = args[3].parse().map_err(|_| "Invalid IPv4")?;
-    let port: u16 = args[4].parse().map_err(|_| "Invalid port")?;
-    if port == 0 || address.is_unspecified() {
-        return Err("Invalid endpoint".into());
-    }
-    for source in args[5].split(',') {
-        model::Network::parse(source)?;
-    }
-    let name = format!("name=ADBShare-{}", args[2]);
-    let result = command("netsh.exe")
-        .args(["advfirewall", "firewall", "delete", "rule", &name])
-        .output()
-        .map_err(|e| e.to_string())?;
-    // netsh returns failure if no matching rule exists; replacement still proceeds.
-    if args[1] == "remove" {
-        let _ = result;
-        return Ok(());
-    }
-    if args[1] != "add" {
-        return Err("Invalid firewall operation".into());
-    }
-    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-    let result = command("netsh.exe")
-        .args([
-            "advfirewall",
-            "firewall",
-            "add",
-            "rule",
-            &name,
-            "dir=in",
-            "action=allow",
-            "protocol=TCP",
-            &format!("localport={port}"),
-            &format!("localip={address}"),
-            &format!("remoteip={}", args[5]),
-            &format!("program={}", exe.display()),
-            "profile=private,domain",
-            "enable=yes",
-        ])
-        .output()
-        .map_err(|e| e.to_string())?;
-    if result.status.success() {
-        Ok(())
-    } else {
-        Err(String::from_utf8_lossy(&result.stdout).to_string())
-    }
+    // Serialize with save/delete/exit even while the elevation request is pending.
+    let result = tokio::task::spawn_blocking(move || {
+        if remove {
+            firewall.remove_group(&id)
+        } else {
+            firewall.apply(&group)
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+    drop(inner);
+    result
 }

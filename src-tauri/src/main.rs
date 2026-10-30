@@ -1,15 +1,21 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 use adbshare::{
     app::{self, App, Inner},
-    gateway, model,
+    firewall, gateway, model,
 };
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+};
 use tauri::Manager;
 
 fn main() {
     let args: Vec<_> = std::env::args().skip(1).collect();
     if args.first().is_some_and(|a| a == "--firewall-helper") {
-        std::process::exit(if app::firewall_helper(&args).is_ok() {
+        std::process::exit(if firewall::helper(&args).is_ok() {
             0
         } else {
             1
@@ -40,6 +46,12 @@ fn main() {
     }
     tauri::Builder::default()
         .manage(App {
+            firewall: Arc::new(firewall::Firewall {
+                ledger: path.with_file_name("firewall-rules.json"),
+                backend: Arc::new(firewall::Windows),
+            }),
+            shutting_down: AtomicBool::new(false),
+            shutdown_complete: AtomicBool::new(false),
             path,
             inner: tokio::sync::Mutex::new(Inner {
                 config,
@@ -55,19 +67,34 @@ fn main() {
             app::start_group,
             app::stop_group,
             app::start_adb,
-            app::firewall
+            app::firewall,
+            app::delete_group,
+            app::request_exit
         ])
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if !window
+                    .state::<App>()
+                    .shutdown_complete
+                    .load(Ordering::SeqCst)
+                {
+                    api.prevent_close();
+                    app::begin_shutdown(window.app_handle().clone());
+                }
+            }
+        })
         .build(tauri::generate_context!())
         .expect("创建 ADBShare 窗口失败")
         .run(|handle, event| {
-            if let tauri::RunEvent::ExitRequested { .. } = event {
-                let app = handle.state::<App>();
-                tauri::async_runtime::block_on(async {
-                    let mut inner = app.inner.lock().await;
-                    for (_, r) in inner.running.drain() {
-                        r.stop().await;
-                    }
-                });
+            if let tauri::RunEvent::ExitRequested { api, .. } = event {
+                if !handle
+                    .state::<App>()
+                    .shutdown_complete
+                    .load(Ordering::SeqCst)
+                {
+                    api.prevent_exit();
+                    app::begin_shutdown(handle.clone());
+                }
             }
         });
 }
