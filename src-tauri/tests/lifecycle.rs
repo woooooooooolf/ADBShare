@@ -189,6 +189,24 @@ async fn failed_exit_remains_recoverable_after_restart() {
     second.cleanup().await.unwrap();
     assert!(backend.rules.lock().unwrap().is_empty());
 }
+
+#[tokio::test]
+async fn deleting_one_group_keeps_other_groups_rules_and_configuration() {
+    let dir = tempfile::tempdir().unwrap();
+    let backend = Arc::new(Fake::default());
+    let a = group();
+    let mut b = group();
+    b.port += 1;
+    let app = app(dir.path(), vec![a.clone(), b.clone()], backend.clone());
+    app.firewall.apply(&a).unwrap();
+    app.firewall.apply(&b).unwrap();
+    app.delete_group(&a.id).await.unwrap();
+    assert_eq!(
+        *backend.rules.lock().unwrap(),
+        BTreeSet::from([b.id.clone()])
+    );
+    assert_eq!(model::load(&app.path).unwrap().groups[0].id, b.id);
+}
 #[test]
 fn cleanup_skips_elevation_when_no_rules_exist() {
     let dir = tempfile::tempdir().unwrap();
