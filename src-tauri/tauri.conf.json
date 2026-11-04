@@ -10,7 +10,7 @@
     "frontendDist": "../dist"
   },
   "app": {
-    "windows": [{ "label": "main", "title": "ADBShare", "width": 1240, "height": 840, "minWidth": 1000, "minHeight": 700 }],
+    "windows": [{ "label": "main", "title": "ADBShare", "width": 1240, "height": 840, "minWidth": 640, "minHeight": 480 }],
     "security": { "csp": "default-src 'self'; connect-src ipc: http://ipc.localhost; style-src 'self' 'unsafe-inline'; img-src 'self' data:" }
   },
   "bundle": { "active": false, "icon": ["icons/icon.ico"] }

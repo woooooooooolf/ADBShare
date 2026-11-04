@@ -10,8 +10,8 @@ import { randomUUID } from 'node:crypto';
 import assert from 'node:assert/strict';
 
 const lab=await fixture();const directory=path.resolve('work/ui-smoke');await mkdir(directory,{recursive:true});
-const port=await freePort();const cdp=await freePort();const file=path.join(directory,'config.json');
-await writeFile(file,JSON.stringify({version:1,adbPath:'adb',upstreamPort:lab.port,groups:[{id:randomUUID(),name:'示例 · Android 调试组',address:'127.0.0.1',port,sources:['127.0.0.0/8'],members:['SIM-PIXEL','SIM-TABLET','SIM-RETURN']}]}));
+const port=await freePort();const cdp=await freePort();let offlinePort=await freePort();while([lab.port,port,cdp].includes(offlinePort))offlinePort=await freePort();const file=path.join(directory,'config.json');
+await writeFile(file,JSON.stringify({version:1,adbPath:'adb',upstreamPort:offlinePort,groups:[{id:randomUUID(),name:'示例 · Android 调试组',address:'127.0.0.1',port,sources:['127.0.0.0/8'],members:['SIM-PIXEL','SIM-TABLET','SIM-RETURN']}]}));
 const testExe=path.join(directory,'ADBShare-ui-test.exe');
 await copyFile(path.resolve(process.env.ADB_SHARE_EXE||'src-tauri/target/release/adbshare.exe'),testExe);
 await writeFile(path.join(directory,'firewall-rules.json'),'[]');
@@ -19,6 +19,29 @@ const proc=spawn(testExe,[],{windowsHide:false,env:{...process.env,ADB_SHARE_DAT
 let exited=false;proc.once('exit',()=>exited=true);
 const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 let browser;let held;let pageRef;let previousPreferences;
+async function dismissOutside(page,id) {
+  const box=await page.locator(`#${id}`).boundingBox();assert(box);
+  await page.mouse.click(Math.max(1,box.x/2),Math.max(1,box.y/2));
+  await expect(page.locator(`#${id}`)).toBeHidden();
+}
+async function resizeWindow(page,width,height) {
+  const ratio=await page.evaluate(()=>window.devicePixelRatio);
+  await new Promise((resolve,reject)=>{
+    const helper=spawn('powershell.exe',['-NoProfile','-NonInteractive','-File',path.resolve('scripts/resize-window-test.ps1'),'-AppPid',String(proc.pid),'-ClientWidth',String(Math.round(width*ratio)),'-ClientHeight',String(Math.round(height*ratio))],{windowsHide:true,stdio:['ignore','ignore','pipe']});
+    let error='';helper.stderr.on('data',b=>error+=b);helper.on('error',reject);helper.on('exit',code=>code===0?resolve():reject(Error(error)));
+  });
+  await expect.poll(()=>page.evaluate(()=>({width:innerWidth,height:innerHeight}))).toEqual({width,height});
+  await page.evaluate(()=>window.scrollTo(0,0));
+}
+async function assertFits(page) {
+  const bounds=await page.evaluate(()=>({viewport:innerWidth,document:document.documentElement.scrollWidth,body:document.body.scrollWidth,sidebarBottom:document.querySelector('.side-bottom').getBoundingClientRect().bottom,height:innerHeight}));
+  assert(bounds.document<=bounds.viewport+1 && bounds.body<=bounds.viewport+1,JSON.stringify(bounds));
+  assert(bounds.sidebarBottom<=bounds.height+1,JSON.stringify(bounds));
+}
+async function assertHeaderRow(page) {
+  const rows=await page.evaluate(()=>['title','delete-group','save','toggle'].map(id=>{const r=document.getElementById(id).getBoundingClientRect();return r.y+r.height/2;}));
+  assert(Math.max(...rows)-Math.min(...rows)<3,`Header controls wrapped: ${rows}`);
+}
 async function restorePreferences() {
   if(pageRef && !pageRef.isClosed() && previousPreferences!==undefined)await pageRef.evaluate(value=>{
     if(value===null)localStorage.removeItem('adbshare.preferences');else localStorage.setItem('adbshare.preferences',value);
@@ -32,19 +55,47 @@ try{
   previousPreferences=await page.evaluate(()=>localStorage.getItem('adbshare.preferences'));
   await page.evaluate(()=>localStorage.setItem('adbshare.preferences',JSON.stringify({language:'zh',theme:'light'})));await page.reload();
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
+  await expect(page.locator('#adb-warning')).toBeVisible();await expect(page.locator('#adb-warning')).toContainText('请先启用本地 ADB 服务');
+  await page.screenshot({path:path.join(directory,'adb-offline.png')});
+  await resizeWindow(page,640,480);await page.locator('#language-toggle').click();
+  await expect(page.locator('#adb-warning')).toContainText('Local ADB Server is unavailable');await assertFits(page);
+  const footer=await page.locator('#adb-warning').boundingBox();assert(footer && Math.abs(footer.y+footer.height-480)<2);
+  await page.screenshot({path:path.join(directory,'adb-offline-small-en.png')});
+  await page.locator('#language-toggle').click();await resizeWindow(page,1240,840);
+  await page.locator('#adb-warning-settings').click();await expect(page.locator('#upstream-port')).toHaveValue(String(offlinePort));
+  const settingsBox=await page.locator('#settings-dialog').boundingBox();
+  await page.mouse.click(settingsBox.x+5,settingsBox.y+5);await expect(page.locator('#settings-dialog')).toBeVisible();
+  await page.mouse.move(settingsBox.x+40,settingsBox.y+35);await page.mouse.down();await page.mouse.move(settingsBox.x/2,settingsBox.y/2);await page.mouse.up();await expect(page.locator('#settings-dialog')).toBeVisible();
+  await dismissOutside(page,'settings-dialog');await expect(page.locator('#adb-warning')).toBeVisible();
+  await page.locator('#adb-warning-settings').click();await page.locator('#upstream-port').fill(String(lab.port));await page.locator('#settings-form button[type="submit"]').click();
+  await expect(page.locator('body')).not.toHaveClass(/busy/);await expect(page.locator('#adb-warning')).toBeHidden();
+  console.log('PASS startup ADB warning, bottom placement, recovery and settings backdrop dismissal');
   await expect(page.locator('#adb-status')).toHaveText('本机设备列表');await expect(page.locator('#device-count')).toHaveText('3');
   await expect(page.locator('.utility-bar button')).toHaveCount(3);
   await expect(page.locator('#group-count')).toHaveText('1');
   await expect(page.locator('#refresh, #summary, #draft-label, .group-heading, main .logs')).toHaveCount(0);
   await page.locator('#group-entry').click();await expect(page.locator('#welcome')).toBeVisible();await expect(page.locator('#editor-header')).toBeHidden();
   await page.locator('#groups .group-item').first().click();
-  await expect(page.locator('.apply-bar button')).toHaveText(['删除组','保存','开始共享']);
+  await expect(page.locator('#editor-header .editor-actions button')).toHaveText(['删除组','保存','开始共享']);await assertHeaderRow(page);
+  for(const [width,height] of [[1600,960],[1000,700],[760,600],[640,480]]) {
+    await resizeWindow(page,width,height);await assertFits(page);await assertHeaderRow(page);
+    const columns=await page.locator('.columns').evaluate(el=>getComputedStyle(el).gridTemplateColumns.split(' ').length);
+    assert.equal(columns,width>1050?2:1);
+    if(width===640)await page.screenshot({path:path.join(directory,'responsive-small-zh.png')});
+    if(width===1600)await page.screenshot({path:path.join(directory,'responsive-wide-zh.png')});
+  }
+  await page.locator('#group-entry').click();await expect(page.locator('#welcome')).toBeVisible();await assertFits(page);
+  const welcomeBox=await page.locator('#welcome').boundingBox();assert(welcomeBox.y+welcomeBox.height<=480);
+  await page.locator('#groups .group-item').first().click();
+  await page.locator('#about').click();await expect(page.locator('#about-dialog')).toBeVisible();await assertFits(page);await dismissOutside(page,'about-dialog');
+  await page.locator('#language-toggle').click();await assertHeaderRow(page);await assertFits(page);await page.locator('#language-toggle').click();
+  await resizeWindow(page,1240,840);console.log('PASS native window resizing, column reflow, compact header and narrow sidebar navigation');
   await expect(page.locator('#firewall-add')).toHaveText('应用规则');await expect(page.locator('#firewall-remove')).toHaveText('移除规则');
   await expect(page.getByText('本机访问不受影响。',{exact:true})).toHaveCount(0);
   await expect(page.getByText('退出时停止共享并清理规则。',{exact:true})).toHaveCount(0);
   await page.locator('#device-entry').click();await expect(page.locator('#local-count')).toHaveText('3');await expect(page.locator('#local-device-list tbody tr')).toHaveCount(3);await expect(page.locator('#local-device-list')).not.toContainText('SIM-RETURN');
-  const inventory=[...lab.state.inventory];lab.state.inventory.pop();await page.locator('#local-refresh').click();await expect(page.locator('#device-count')).toHaveText('2');await expect(page.locator('#local-count')).toHaveText('2');
-  lab.state.inventory=inventory;await page.locator('#local-refresh').click();await expect(page.locator('#local-count')).toHaveText('3');await page.screenshot({path:path.join(directory,'local-devices-light-zh.png')});await page.locator('#close-devices').click();console.log('PASS local-device entry reports actual count and refreshes inventory');
+  const inventory=[...lab.state.inventory];lab.state.inventory=[];await page.locator('#local-refresh').click();await expect(page.locator('#local-count')).toHaveText('0');await expect(page.locator('#adb-warning')).toBeHidden();lab.state.inventory=[...inventory];lab.state.inventory.pop();await page.locator('#local-refresh').click();await expect(page.locator('#device-count')).toHaveText('2');await expect(page.locator('#local-count')).toHaveText('2');
+  lab.state.inventory=inventory;await page.locator('#local-refresh').click();await expect(page.locator('#local-count')).toHaveText('3');await page.screenshot({path:path.join(directory,'local-devices-light-zh.png')});await dismissOutside(page,'local-devices-dialog');console.log('PASS local-device entry reports actual count and refreshes inventory');
   await page.locator('#about').click();await expect(page.locator('#about-summary')).toContainText('wooooooooolf');await expect(page.locator('#about-summary')).toContainText('GPL-3.0-only');
   const built=Date.parse(await page.locator('#about-summary time').getAttribute('datetime'));assert(Number.isFinite(built)&&built<=Date.now()+10000&&built>Date.UTC(2026,0,1));
   await page.locator('[data-tab="project"]').click();await expect(page.locator('#license-document')).toContainText('GNU GENERAL PUBLIC LICENSE');
@@ -61,10 +112,11 @@ try{
   await expect(page.locator('#third-party-components')).not.toContainText('TERMS AND CONDITIONS');
   await page.screenshot({path:path.join(directory,'third-party-light-zh.png')});
   await page.locator('[data-tab="project"]').click();await expect(page.locator('#third-party-components')).toBeHidden();await expect(page.locator('#license-document')).toContainText('GNU GENERAL PUBLIC LICENSE');
-  await page.locator('#close-about').click();console.log('PASS about metadata, project license and concise third-party component table');
+  await dismissOutside(page,'about-dialog');console.log('PASS about metadata, project license and concise third-party component table');
   await page.locator('#group-name').fill('Locale draft');await page.locator('[data-serial="emulator-5554"]').check();
   await page.locator('#language-toggle').click();await expect(page.locator('html')).toHaveAttribute('lang','en');await expect(page.locator('#settings')).toHaveText('Local ADB settings');await expect(page.locator('#adb-status')).toHaveText('Local devices');await expect(page.locator('#device-count')).toHaveText('3');
   await expect(page.locator('#group-name')).toHaveValue('Locale draft');await expect(page.locator('[data-serial="emulator-5554"]')).toBeChecked();await expect(page.locator('#sources')).toHaveAttribute('placeholder','192.168.1.0/24 or 192.168.1.20');
+  await page.locator('#new-bottom').click();await expect(page.locator('#confirm-dialog')).toBeVisible();await dismissOutside(page,'confirm-dialog');await expect(page.locator('#group-name')).toHaveValue('Locale draft');await expect(page.locator('#group-count')).toHaveText('1');
   await page.locator('#sources').fill('8.8.8.8');await page.locator('#save').click();await expect(page.locator('body')).not.toHaveClass(/busy/);await expect(page.locator('#notice')).toContainText('private IPv4');await page.locator('#sources').fill('127.0.0.0/8');
   await page.locator('#theme-toggle').click();await expect(page.locator('html')).toHaveAttribute('data-theme','dark');assert.equal(await page.evaluate(()=>getComputedStyle(document.documentElement).getPropertyValue('--bg').trim()),'#0c0d0f');
   await page.evaluate(()=>window.scrollTo(0,0));await page.screenshot({path:path.join(directory,'dark-en.png')});await page.locator('#about').click();await page.screenshot({path:path.join(directory,'about-dark-en.png')});await page.locator('[data-tab="thirdParty"]').click();await expect(page.locator('#third-party-components th')).toHaveText(['Component','Version','License']);await page.screenshot({path:path.join(directory,'third-party-dark-en.png')});await page.locator('#close-about').click();
@@ -105,7 +157,7 @@ try{
   await expect(page.locator('#history-overview')).toContainText('已连接');
   await page.screenshot({path:path.join(directory,'history-light-zh.png')});
   await page.locator('#history-reset').click();await page.locator('#confirm-yes').click();await expect(page.locator('#history-records')).toHaveText('暂无日志');
-  await page.locator('#close-history').click();
+  await dismissOutside(page,'history-dialog');
   held=net.connect({host:'127.0.0.1',port});const resumed=new Reader(held);await once(held,'connect');held.write(pack('host:transport:SIM-PIXEL'));assert.equal((await resumed.bytes(4)).toString(),'OKAY');held.write(pack('shell:sleep 30'));assert.equal((await resumed.bytes(4)).toString(),'OKAY');
   console.log('PASS global/group/device history, payload, copy, scoped reset, persisted enablement and hot revocation');
   const closed=once(held,'close');await page.locator('#toggle').click();await closed;await expect(name).toBeEnabled();console.log('PASS live session visibility and stop revocation');

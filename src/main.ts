@@ -25,6 +25,7 @@ let dirty = false;
 let busy = false;
 let adbError = '';
 let connected = false;
+let adbChecked = false;
 let refreshing = false;
 let info: AppInfo | null = null;
 let aboutTab: 'overview' | 'project' | 'thirdParty' = 'overview';
@@ -42,8 +43,8 @@ preferences();
 
 document.querySelector('#app')!.innerHTML = `
 <aside>
-  <div class="brand"><span class="brand-icon">${glyph}</span><div>ADBShare<small data-i18n="tagline"></small></div></div>
-  <button id="group-entry" class="flat-nav">${icons.groups}<span data-i18n="groups"></span><span id="group-count" class="nav-count">0</span></button><nav id="groups"></nav>
+  <div class="brand" aria-label="ADBShare"><span class="brand-icon">${glyph}</span><div>ADBShare<small data-i18n="tagline"></small></div></div>
+  <button id="group-entry" class="flat-nav">${icons.groups}<span data-i18n="groups"></span><span id="group-count" class="nav-count">0</span></button><nav id="groups" aria-label="Groups"></nav>
   <button id="new-bottom" class="new-group"><span aria-hidden="true">＋</span> <span data-i18n="newGroup"></span></button>
   <div class="side-bottom">
     <button id="device-entry" class="flat-nav" aria-haspopup="dialog" aria-expanded="false">${icons.devices}<span id="adb-status" data-i18n="localDevices"></span><span id="device-count" class="nav-count">0</span></button>
@@ -57,11 +58,10 @@ document.querySelector('#app')!.innerHTML = `
   </div>
 </aside>
 <main>
-  <header id="editor-header" hidden><h1 id="title" data-i18n="groupConfig"></h1><span id="group-state" class="badge"></span></header>
+  <header id="editor-header" hidden><div class="editor-title"><h1 id="title" data-i18n="groupConfig"></h1><span id="group-state" class="badge"></span></div><div class="editor-actions"><button id="delete-group" class="danger-button" data-i18n="deleteGroup"></button><button id="save" class="secondary" data-i18n="save"></button><button id="toggle" class="primary"></button></div></header>
   <div id="notice" role="status" hidden></div>
   <section id="welcome" class="welcome"><div class="welcome-icon">${glyph}</div><h2 data-i18n="welcomeTitle"></h2><p class="welcome-description" data-i18n="welcomeDescription"></p><div class="welcome-steps"><span><b>01</b><span data-i18n="selectDevices"></span></span><span><b>02</b><span data-i18n="endpoint"></span></span><span><b>03</b><span data-i18n="remoteUse"></span></span></div></section>
   <section id="workspace" hidden>
-    <div class="apply-bar"><span id="apply-hint" class="quiet"></span><div><button id="delete-group" class="danger-button" data-i18n="deleteGroup"></button><button id="save" class="secondary" data-i18n="save"></button><button id="toggle" class="primary"></button></div></div>
     <div class="columns"><div class="configuration">
       <section class="card"><div class="section-head"><span class="step">01</span><div><h2 data-i18n="selectDevices"></h2><p data-i18n="deviceHint"></p></div><span id="member-count" class="count"></span></div><div id="devices"></div></section>
       <section class="card"><div class="section-head"><span class="step">02</span><div><h2 data-i18n="endpoint"></h2><p data-i18n="endpointHint"></p></div></div>
@@ -75,6 +75,7 @@ document.querySelector('#app')!.innerHTML = `
     </div></div>
   </section>
 
+  <footer id="adb-warning" role="status" hidden>${icons.info}<span data-i18n="adbStartupHint"></span><button id="adb-warning-settings" class="secondary" data-i18n="openSettings"></button></footer>
 </main>
 <dialog id="history-dialog" class="history-dialog"><div class="dialog-heading"><h2 data-i18n="logs"></h2><button id="close-history" class="square-button close-button">${icons.close}</button></div>
   <div class="history-filters"><label><span data-i18n="historyScope"></span><select id="history-group"></select></label><label><span data-i18n="historyDevice"></span><select id="history-device"></select></label></div>
@@ -110,10 +111,12 @@ function renderSide() {
   const groups = [...data.config.groups]; if (draft && !groups.some(g => g.id === draft!.id)) groups.push(draft);
   $('groups').innerHTML = groups.map(g => {
     const r = data.runtime.find(r => r.id === g.id);
-    return `<button class="group-item ${draft?.id === g.id ? 'selected' : ''}" data-group="${esc(g.id)}"><span class="group-icon">▦</span><span><strong>${esc(g.id === draft?.id ? draft.name : g.name)}</strong><small>${t('deviceCount',{n:g.members.length})} · ${r ? t(r.status==='running'?'running':'failed') : t('stopped')}</small></span><i class="dot ${r?.status==='running'?'online':''}"></i></button>`;
+    const label=g.id===draft?.id?draft.name:g.name;
+    return `<button class="group-item ${draft?.id === g.id ? 'selected' : ''}" data-group="${esc(g.id)}" title="${esc(label)}" aria-label="${esc(label)}"><span class="group-icon">▦</span><span><strong>${esc(g.id === draft?.id ? draft.name : g.name)}</strong><small>${t('deviceCount',{n:g.members.length})} · ${r ? t(r.status==='running'?'running':'failed') : t('stopped')}</small></span><i class="dot ${r?.status==='running'?'online':''}"></i></button>`;
   }).join('');
   $('groups').querySelectorAll<HTMLButtonElement>('[data-group]').forEach(b => b.onclick = () => void selectGroup(b.dataset.group!));
   $('group-count').textContent = String(groups.length);
+  $('group-entry').setAttribute('aria-label',`${t('groups')} ${groups.length}`);
   $('group-entry').classList.toggle('selected', !draft);
   $('config-path').textContent = `${t('configPath')}: ${data.configPath}`;
   $('editor-header').hidden = !draft;
@@ -149,6 +152,7 @@ function renderDevices() {
 function renderLocalDevices() {
   $('adb-status').textContent = t('localDevices');
   $('device-count').textContent = String(devices.length);
+  $('device-entry').setAttribute('aria-label',`${t('localDevices')} ${devices.length}`);
   $('device-entry').title = connected?t('localDevices'):t('adbOffline');
   $('device-entry').classList.toggle('adb-offline',!connected);
   $('local-count').textContent = String(devices.length);
@@ -175,7 +179,7 @@ function renderState() {
   $<HTMLButtonElement>('delete-group').disabled=busy;
   $<HTMLButtonElement>('firewall-add').disabled=busy || locked() && dirty || draft.address.startsWith('127.');
   $<HTMLButtonElement>('firewall-remove').disabled=busy || !data.config.groups.some(g=>g.id===draft!.id);
-  $('apply-hint').textContent=disabled?t('editStopped'):'';
+  $('group-state').title=disabled?t('editStopped'):'';
   const cmd=commands();
   $('connection').innerHTML=`<div class="endpoint"><span>${t(draft.address.startsWith('127.')?'localOnly':'endpoint')}</span><strong>${esc(draft.address)}<em>:${draft.port}</em></strong><small>${t(running?'listening':'notListening')}</small></div>${dirty?`<p class="draft-warning">${t('commandPreview')}</p>`:''}${cmd.map((c,i)=>`<div class="command"><span>${t(i===0?'listCommand':'shellCommand')}</span><code>${esc(c)}</code><button class="text-btn copy" data-command="${i}">${t('copy')}</button></div>`).join('')}`;
   $('connection').querySelectorAll<HTMLButtonElement>('.copy').forEach(b=>b.onclick=()=>void action(async()=>{await navigator.clipboard.writeText(cmd[Number(b.dataset.command)]);notify(t('copied'));}));
@@ -187,6 +191,8 @@ function applyLanguage() {
   $('language-toggle').title=t('switchLanguage'); $('language-toggle').setAttribute('aria-label',t('switchLanguage')); $('language-toggle').setAttribute('aria-pressed',String(language==='en'));
   $('theme-toggle').innerHTML=theme==='dark'?icons.sun:icons.moon;
   $('theme-toggle').title=t(theme==='dark'?'lightMode':'darkMode'); $('theme-toggle').setAttribute('aria-label',t(theme==='dark'?'lightMode':'darkMode')); $('theme-toggle').setAttribute('aria-pressed',String(theme==='dark'));
+  for(const [id,key] of [['group-entry','groups'],['new-bottom','newGroup'],['settings','settings'],['history-entry','logs']] as const){$(id).title=t(key);if(id!=='group-entry')$(id).setAttribute('aria-label',t(key));}
+  $('groups').setAttribute('aria-label',t('groups'));
   $('about').title=t('about'); $('about').setAttribute('aria-label',t('about'));
   document.querySelectorAll<HTMLElement>('.close-button').forEach(b=>{b.title=t('close');b.setAttribute('aria-label',t('close'));});
 }
@@ -286,10 +292,15 @@ async function save() {
   if (i<0) config.groups.push(structuredClone(draft));else config.groups[i]=structuredClone(draft);
   await invoke('save_config',{config});dirty=false;await sync();renderEditor();
 }
+function renderAdbWarning() {
+  const visible=adbChecked && !connected;
+  $('adb-warning').hidden=!visible;
+  document.body.classList.toggle('has-adb-warning',visible);
+}
 async function refreshDevices() {
   if (refreshing) return;refreshing=true;
-  try {devices=await invoke<Device[]>('discover');connected=true;adbError='';} catch(e){connected=false;adbError=String(e);devices=[];} finally {refreshing=false;}
-  renderDevices();renderLocalDevices();
+  try {devices=await invoke<Device[]>('discover');connected=true;adbError='';} catch(e){connected=false;adbError=String(e);devices=[];} finally {refreshing=false;adbChecked=true;}
+  renderDevices();renderLocalDevices();renderAdbWarning();
 }
 function openSettings() {
   if (!data) return;
@@ -297,6 +308,7 @@ function openSettings() {
   $<HTMLInputElement>('adb-path').value=data.config.adbPath;$<HTMLInputElement>('upstream-port').value=String(data.config.upstreamPort);dialog('settings-dialog').showModal();
 }
 $('new-bottom').onclick=()=>void newGroup();$('settings').onclick=openSettings;
+$('adb-warning-settings').onclick=openSettings;
 $('group-entry').onclick=()=>void action(async()=>{if(!await mayDiscard())return;draft=null;dirty=false;renderEditor();});
 $('history-entry').onclick=()=>void action(async()=>{historyGroup='';historySerial='';dialog('history-dialog').showModal();await refreshHistory();});
 $('close-history').onclick=()=>{historyRequest++;dialog('history-dialog').close();};
@@ -346,6 +358,18 @@ async function saveSettings() {
 }
 $('settings-form').onsubmit=e=>{e.preventDefault();void action(async()=>{await saveSettings();dialog('settings-dialog').close();await refreshDevices();notify(t('settingsSaved'));});};
 $('start-adb').onclick=()=>void action(async()=>{await saveSettings();await invoke('start_adb');await refreshDevices();dialog('settings-dialog').close();notify(t('adbStarted'));});
+document.querySelectorAll<HTMLDialogElement>('dialog').forEach(modal=>{
+  let pressedOutside=false;
+  const outside=(e: MouseEvent)=>{const r=modal.getBoundingClientRect();return e.clientX<r.left || e.clientX>r.right || e.clientY<r.top || e.clientY>r.bottom;};
+  modal.addEventListener('pointerdown',e=>{pressedOutside=e.button===0 && e.target===modal && outside(e);});
+  modal.addEventListener('pointercancel',()=>{pressedOutside=false;});
+  modal.addEventListener('close',()=>{pressedOutside=false;});
+  modal.addEventListener('click',e=>{
+    const dismiss=pressedOutside && e.target===modal && outside(e);pressedOutside=false;
+    if(dismiss && modal.open && modal.dispatchEvent(new Event('cancel',{cancelable:true})) && modal.open)modal.close();
+  });
+});
+new ResizeObserver(()=>document.documentElement.style.setProperty('--adb-warning-height',`${$('adb-warning').getBoundingClientRect().height}px`)).observe($('adb-warning'));
 dialog('shutdown-dialog').oncancel=e=>e.preventDefault();
 $('shutdown-back').onclick=()=>dialog('shutdown-dialog').close();
 $('shutdown-retry').onclick=()=>void invoke('request_exit').catch(e=>notify(errorText(e),true));
