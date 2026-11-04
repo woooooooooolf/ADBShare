@@ -22,12 +22,17 @@ struct Fake {
     fail: AtomicBool,
     ignore_remove: AtomicBool,
     stopped_port: AtomicU16,
+    applied: Mutex<Vec<Group>>,
 }
 impl Backend for Fake {
     fn existing(&self, _: &BTreeSet<String>) -> Result<BTreeSet<String>, String> {
         Ok(self.rules.lock().unwrap().clone())
     }
     fn apply(&self, g: &Group) -> Result<(), String> {
+        if self.fail.load(Ordering::SeqCst) {
+            return Err("UAC canceled (simulated)".into());
+        }
+        self.applied.lock().unwrap().push(g.clone());
         self.rules.lock().unwrap().insert(g.id.clone());
         Ok(())
     }
@@ -48,6 +53,34 @@ impl Backend for Fake {
         }
         Ok(())
     }
+}
+#[tokio::test]
+async fn start_refreshes_latest_rules_and_failed_elevation_never_starts_listener() {
+    let dir = tempfile::tempdir().unwrap();
+    let backend = Arc::new(Fake::default());
+    let mut g = group();
+    g.address = "192.168.1.23".parse().unwrap();
+    g.port = 23456;
+    g.sources = vec!["192.168.1.45".into()];
+    let app = app(dir.path(), vec![g.clone()], backend.clone());
+    backend.fail.store(true, Ordering::SeqCst);
+    assert!(app
+        .start_group(&g.id)
+        .await
+        .unwrap_err()
+        .contains("UAC canceled"));
+    assert!(app.inner.lock().await.running.is_empty());
+    backend.fail.store(false, Ordering::SeqCst);
+    app.update_firewall(&g.id, false).await.unwrap();
+    let mut latest = g.clone();
+    latest.port += 1;
+    latest.sources = vec!["192.168.1.99".into()];
+    app.inner.lock().await.config.groups[0] = latest.clone();
+    app.update_firewall(&g.id, false).await.unwrap();
+    let applied = backend.applied.lock().unwrap();
+    assert_eq!(applied.len(), 2);
+    assert_eq!(applied[1].port, latest.port);
+    assert_eq!(applied[1].sources, latest.sources);
 }
 fn group() -> Group {
     Group {
@@ -125,6 +158,19 @@ async fn delete_stops_listener_before_cleanup_and_removes_config() {
     .await
     .unwrap();
     backend.stopped_port.store(g.port, Ordering::SeqCst);
+    // Stopping preserves rules. Removing rules also stops the active listener,
+    // including when UAC is canceled; a retry can then remove the retained rule.
+    app.stop_group(&g.id).await.unwrap();
+    assert!(backend.rules.lock().unwrap().contains(&g.id));
+    let r = gateway::start(g.clone(), port, app.logs.clone())
+        .await
+        .unwrap();
+    app.inner.lock().await.running.insert(g.id.clone(), r);
+    backend.fail.store(true, Ordering::SeqCst);
+    assert!(app.update_firewall(&g.id, true).await.is_err());
+    assert!(app.inner.lock().await.running.is_empty());
+    assert!(backend.rules.lock().unwrap().contains(&g.id));
+    backend.fail.store(false, Ordering::SeqCst);
     app.delete_group(&g.id).await.unwrap();
     use tokio::io::AsyncReadExt;
     let mut byte = [0];

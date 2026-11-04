@@ -96,6 +96,72 @@ pub fn license_document(kind: String, component: Option<usize>) -> Result<&'stat
 }
 
 impl App {
+    pub async fn start_group(&self, id: &str) -> Result<(), String> {
+        let mut inner = self.inner.lock().await;
+        self.ensure_open()?;
+        if inner.running.contains_key(id) {
+            return Err("该组已运行，请先停止".into());
+        }
+        let group = inner
+            .config
+            .groups
+            .iter()
+            .find(|g| g.id == id)
+            .ok_or("未找到分组")?
+            .clone();
+        if group.members.is_empty() {
+            return Err("请先选择至少一台设备".into());
+        }
+        if !group.address.is_loopback() {
+            let firewall = self.firewall.clone();
+            let latest = group.clone();
+            tokio::task::spawn_blocking(move || firewall.apply(&latest))
+                .await
+                .map_err(|e| e.to_string())??;
+        }
+        let running = gateway::start(group, inner.config.upstream_port, self.logs.clone())
+            .await
+            .map_err(|e| e.to_string())?;
+        inner.running.insert(id.into(), running);
+        Ok(())
+    }
+    pub async fn stop_group(&self, id: &str) -> Result<(), String> {
+        let mut inner = self.inner.lock().await;
+        if let Some(r) = inner.running.remove(id) {
+            r.stop().await;
+        }
+        Ok(())
+    }
+    pub async fn update_firewall(&self, id: &str, remove: bool) -> Result<(), String> {
+        let mut inner = self.inner.lock().await;
+        self.ensure_open()?;
+        let group = inner
+            .config
+            .groups
+            .iter()
+            .find(|g| g.id == id)
+            .ok_or("未找到分组")?
+            .clone();
+        // Revocation happens even when elevation or rule removal subsequently fails.
+        if remove {
+            if let Some(r) = inner.running.remove(id) {
+                r.stop().await;
+            }
+        } else if group.address.is_loopback() {
+            return Err("仅本机模式不需要防火墙规则".into());
+        }
+        let firewall = self.firewall.clone();
+        let id = id.to_owned();
+        tokio::task::spawn_blocking(move || {
+            if remove {
+                firewall.remove_group(&id)
+            } else {
+                firewall.apply(&group)
+            }
+        })
+        .await
+        .map_err(|e| e.to_string())?
+    }
     pub fn ensure_open(&self) -> Result<(), String> {
         if self.shutting_down.load(Ordering::SeqCst) {
             return Err("正在退出并清理规则，请稍候".into());
@@ -287,34 +353,11 @@ pub async fn save_config(config: Config, app: State<'_, App>) -> Result<(), Stri
 }
 #[tauri::command]
 pub async fn start_group(id: String, app: State<'_, App>) -> Result<(), String> {
-    let mut inner = app.inner.lock().await;
-    app.ensure_open()?;
-    if inner.running.contains_key(&id) {
-        return Err("该组已运行，请先停止".into());
-    }
-    let group = inner
-        .config
-        .groups
-        .iter()
-        .find(|g| g.id == id)
-        .ok_or("未找到分组")?
-        .clone();
-    if group.members.is_empty() {
-        return Err("请先选择至少一台设备".into());
-    }
-    let running = gateway::start(group, inner.config.upstream_port, app.logs.clone())
-        .await
-        .map_err(|e| e.to_string())?;
-    inner.running.insert(id, running);
-    Ok(())
+    app.start_group(&id).await
 }
 #[tauri::command]
 pub async fn stop_group(id: String, app: State<'_, App>) -> Result<(), String> {
-    let mut inner = app.inner.lock().await;
-    if let Some(r) = inner.running.remove(&id) {
-        r.stop().await;
-    }
-    Ok(())
+    app.stop_group(&id).await
 }
 #[tauri::command]
 pub async fn start_adb(app: State<'_, App>) -> Result<(), String> {
@@ -344,29 +387,5 @@ pub async fn start_adb(app: State<'_, App>) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn firewall(id: String, remove: bool, app: State<'_, App>) -> Result<(), String> {
-    let inner = app.inner.lock().await;
-    app.ensure_open()?;
-    let group = inner
-        .config
-        .groups
-        .iter()
-        .find(|g| g.id == id)
-        .ok_or("未找到分组")?
-        .clone();
-    let firewall = app.firewall.clone();
-    if !remove && group.address.is_loopback() {
-        return Err("仅本机模式不需要防火墙规则".into());
-    }
-    // Serialize with save/delete/exit even while the elevation request is pending.
-    let result = tokio::task::spawn_blocking(move || {
-        if remove {
-            firewall.remove_group(&id)
-        } else {
-            firewall.apply(&group)
-        }
-    })
-    .await
-    .map_err(|e| e.to_string())?;
-    drop(inner);
-    result
+    app.update_firewall(&id, remove).await
 }
