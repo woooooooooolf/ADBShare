@@ -1,3 +1,4 @@
+pub use crate::history::{log, Logs};
 use crate::{
     model::{Group, Network},
     protocol::{self as adb, Result},
@@ -6,14 +7,16 @@ use serde::Serialize;
 use std::{
     collections::BTreeMap,
     net::IpAddr,
+    pin::Pin,
     sync::{
         atomic::{AtomicU64, Ordering},
         Arc, Mutex,
     },
+    task::{Context, Poll},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
+    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf},
     net::{TcpListener, TcpStream},
     sync::{watch, Semaphore},
     task::{JoinHandle, JoinSet},
@@ -29,40 +32,52 @@ pub struct Session {
     pub since: u64,
 }
 pub type Sessions = Arc<Mutex<BTreeMap<u64, Session>>>;
-pub type Logs = Arc<Mutex<Vec<String>>>;
-pub fn log(logs: &Logs, message: impl AsRef<str>) {
-    let mut l = logs.lock().unwrap();
-    l.push(format!(
-        "{} {}",
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs(),
-        message.as_ref()
-    ));
-    if l.len() > 200 {
-        l.remove(0);
-    }
-}
 pub struct Running {
     pub cancel: CancellationToken,
     pub task: JoinHandle<()>,
     pub sessions: Sessions,
+    access: Access,
+    inventory: watch::Sender<String>,
 }
+type Access = Arc<Mutex<BTreeMap<String, CancellationToken>>>;
 impl Running {
+    pub fn set_device_enabled(&self, serial: &str, enabled: bool) {
+        let mut access = self.access.lock().unwrap();
+        if enabled {
+            access.entry(serial.into()).or_default();
+        } else if let Some(token) = access.remove(serial) {
+            token.cancel();
+        }
+        drop(access);
+        self.inventory.send_modify(|_| {});
+    }
+
     pub async fn stop(self) {
         self.cancel.cancel();
         let _ = self.task.await;
     }
 }
-struct SessionGuard(Sessions, u64);
+struct SessionGuard(Sessions, u64, Logs, String);
 impl Drop for SessionGuard {
     fn drop(&mut self) {
-        self.0.lock().unwrap().remove(&self.1);
+        if let Some(session) = self.0.lock().unwrap().remove(&self.1) {
+            self.2.lock().unwrap().event(
+                Some(&self.3),
+                if session.serial == "协商中" {
+                    None
+                } else {
+                    Some(&session.serial)
+                },
+                Some(self.1),
+                "disconnect",
+                session.peer,
+            );
+        }
     }
 }
 
 pub async fn start(group: Group, upstream: u16, logs: Logs) -> Result<Running> {
+    logs.lock().unwrap().register(&group);
     let ranges: Vec<_> = group
         .sources
         .iter()
@@ -75,12 +90,36 @@ pub async fn start(group: Group, upstream: u16, logs: Logs) -> Result<Running> {
     let stop = cancel.clone();
     let sessions = Sessions::default();
     let live = sessions.clone();
+    let access: Access = Arc::new(Mutex::new(
+        group
+            .members
+            .iter()
+            .filter(|s| !group.disabled_members.contains(s))
+            .map(|s| (s.clone(), CancellationToken::new()))
+            .collect(),
+    ));
+    let live_access = access.clone();
+    let (tx, rx) = watch::channel(String::new());
+    let inventory = tx.clone();
     let task = tokio::spawn(async move {
-        log(
-            &logs,
-            format!("{}：开始共享 {}:{}", group.name, group.address, group.port),
+        logs.lock().unwrap().event(
+            Some(&group.id),
+            None,
+            None,
+            "group-enabled",
+            format!("{}:{}", group.address, group.port),
         );
-        let (tx, rx) = watch::channel(String::new());
+        for serial in &group.members {
+            if !group.disabled_members.contains(serial) {
+                logs.lock().unwrap().event(
+                    Some(&group.id),
+                    Some(serial),
+                    None,
+                    "sharing-enabled",
+                    "",
+                );
+            }
+        }
         let mut jobs = JoinSet::new();
         let inventory_stop = stop.clone();
         jobs.spawn(async move {
@@ -92,24 +131,25 @@ pub async fn start(group: Group, upstream: u16, logs: Logs) -> Result<Running> {
             }
         });
         let limit = Arc::new(Semaphore::new(128));
-        let counter = AtomicU64::new(1);
+        static COUNTER: AtomicU64 = AtomicU64::new(1);
         loop {
             tokio::select! {
                 _=stop.cancelled()=>break,
                 Some(_)=jobs.join_next()=>{},
                 accepted=listener.accept()=>{
-                    let (mut client,peer)=match accepted {Ok(v)=>v,Err(e)=>{log(&logs,format!("监听失败：{e}"));break;}};
+                    let (mut client,peer)=match accepted {Ok(v)=>v,Err(e)=>{logs.lock().unwrap().event(Some(&group.id),None,None,"error",e.to_string());break;}};
                     let allowed=match peer.ip() {IpAddr::V4(ip)=>ip.is_loopback() || ranges.iter().any(|r|r.contains(ip)),_=>false};
                     let permit=limit.clone().try_acquire_owned();
-                    if !allowed || permit.is_err() {log(&logs,format!("拒绝连接 {peer}"));continue;}
+                    if !allowed || permit.is_err() {logs.lock().unwrap().event(Some(&group.id),None,None,"denied",peer.to_string());continue;}
                     let permit=permit.unwrap();let group=group.clone();let logs=logs.clone();let sessions=live.clone();let stop=stop.clone();let rx=rx.clone();
-                    let id=counter.fetch_add(1,Ordering::Relaxed);
+                    let id=COUNTER.fetch_add(1,Ordering::Relaxed);let access=live_access.clone();
                     jobs.spawn(async move {
                         let _permit=permit;
                         sessions.lock().unwrap().insert(id,Session {id,peer:peer.to_string(),serial:"协商中".into(),since:SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()});
-                        let _guard=SessionGuard(sessions.clone(),id);
-                        let result=tokio::select! {_=stop.cancelled()=>Ok(()),result=handle(&mut client,&group,upstream,rx,&sessions,id)=>result};
-                        if let Err(e)=result {let _=adb::fail(&mut client,&e.to_string()).await;log(&logs,format!("{} · {peer}：{e}",group.name));}
+                        let _guard=SessionGuard(sessions.clone(),id,logs.clone(),group.id.clone());
+                        logs.lock().unwrap().event(Some(&group.id),None,Some(id),"connect",peer.to_string());
+                        let result=tokio::select! {_=stop.cancelled()=>Ok(()),result=handle(&mut client,&group,upstream,rx,&sessions,id,&access,&logs)=>result};
+                        if let Err(e)=result {let _=adb::fail(&mut client,&e.to_string()).await;let serial=sessions.lock().unwrap().get(&id).map(|s|s.serial.clone());logs.lock().unwrap().event(Some(&group.id),serial.as_deref().filter(|s|*s!="协商中"),Some(id),"error",format!("{peer}: {e}"));}
                     });
                 }
             }
@@ -117,12 +157,21 @@ pub async fn start(group: Group, upstream: u16, logs: Logs) -> Result<Running> {
         drop(listener);
         jobs.abort_all();
         while jobs.join_next().await.is_some() {}
-        log(&logs, format!("{}：已停止，连接已关闭", group.name));
+        logs.lock()
+            .unwrap()
+            .event(Some(&group.id), None, None, "group-disabled", "");
+        for serial in &group.members {
+            logs.lock()
+                .unwrap()
+                .event(Some(&group.id), Some(serial), None, "sharing-disabled", "");
+        }
     });
     Ok(Running {
         cancel,
         task,
         sessions,
+        access,
+        inventory,
     })
 }
 fn named<'a>(request: &str, group: &'a Group) -> Option<(&'a str, String)> {
@@ -151,6 +200,7 @@ fn allowed_command(command: &str) -> bool {
             })
         })
 }
+#[allow(clippy::too_many_arguments)]
 async fn handle(
     client: &mut TcpStream,
     group: &Group,
@@ -158,12 +208,23 @@ async fn handle(
     mut inventory: watch::Receiver<String>,
     sessions: &Sessions,
     id: u64,
+    access: &Access,
+    logs: &Logs,
 ) -> Result<()> {
     client.set_nodelay(true)?;
+    let mut group = group.clone();
+    group
+        .members
+        .retain(|s| access.lock().unwrap().contains_key(s));
+    let group = &group;
     let request = adb::read_frame(client).await?;
+    logs.lock()
+        .unwrap()
+        .event(Some(&group.id), None, Some(id), "request", request.clone());
     if matches!(request.as_str(), "host:devices" | "host:devices-l") {
         let payload = adb::query(upstream, &request).await?;
-        return adb::okay_frame(client, &adb::filter(&payload, &group.members)).await;
+        let members = access.lock().unwrap().keys().cloned().collect::<Vec<_>>();
+        return adb::okay_frame(client, &adb::filter(&payload, &members)).await;
     }
     if matches!(
         request.as_str(),
@@ -173,7 +234,8 @@ async fn handle(
         let mut previous = None;
         client.write_all(b"OKAY").await?;
         loop {
-            let list = adb::filter(&inventory.borrow().clone(), &group.members);
+            let members = access.lock().unwrap().keys().cloned().collect::<Vec<_>>();
+            let list = adb::filter(&inventory.borrow().clone(), &members);
             let list = if long {
                 list
             } else {
@@ -210,11 +272,12 @@ async fn handle(
         if !allowed_command(&command) {
             return Err("host command denied by ADBShare".into());
         }
-        sessions.lock().unwrap().get_mut(&id).unwrap().serial = serial.into();
-        let mut server = adb::connect(upstream).await?;
-        adb::frame(&mut server, &request).await?;
-        tokio::io::copy_bidirectional(client, &mut server).await?;
-        return Ok(());
+        let token = select_device(access, sessions, logs, group, serial, id, &request)?;
+        return tokio::select! { _=token.cancelled()=>Ok(()), result=async {
+            let mut server=adb::connect(upstream).await?;
+            adb::frame(&mut server,&request).await?;
+            relay(client,&mut server,logs,group,serial,id,&token).await
+        }=>result };
     }
     let modern = request.starts_with("host:tport:");
     let serial = if let Some(serial) = request
@@ -242,15 +305,12 @@ async fn handle(
             if !allowed_command(command) {
                 return Err("host command denied by ADBShare".into());
             }
-            sessions.lock().unwrap().get_mut(&id).unwrap().serial = device.serial.clone();
-            let mut server = adb::connect(upstream).await?;
-            adb::frame(
-                &mut server,
-                &format!("host-serial:{}:{command}", device.serial),
-            )
-            .await?;
-            tokio::io::copy_bidirectional(client, &mut server).await?;
-            return Ok(());
+            let token = select_device(access, sessions, logs, group, &device.serial, id, &request)?;
+            return tokio::select! { _=token.cancelled()=>Ok(()), result=async {
+                let mut server=adb::connect(upstream).await?;
+                adb::frame(&mut server,&format!("host-serial:{}:{command}",device.serial)).await?;
+                relay(client,&mut server,logs,group,&device.serial,id,&token).await
+            }=>result };
         }
         device.serial
     } else if [
@@ -285,7 +345,10 @@ async fn handle(
     if !group.members.contains(&serial) {
         return Err("device is not assigned to this group".into());
     }
-    sessions.lock().unwrap().get_mut(&id).unwrap().serial = serial.clone();
+    let token = select_device(access, sessions, logs, group, &serial, id, &request)?;
+    tokio::select! {
+        _ = token.cancelled() => Ok(()),
+        result = async {
     let mut server = adb::connect(upstream).await?;
     adb::frame(
         &mut server,
@@ -313,7 +376,109 @@ async fn handle(
     if service.starts_with("host") || service.starts_with("reverse:") {
         return Err("service denied by ADBShare (host/reverse)".into());
     }
+    logs.lock().unwrap().event(Some(&group.id),Some(&serial),Some(id),"service",service.clone());
     adb::frame(&mut server, &service).await?;
-    tokio::io::copy_bidirectional(client, &mut server).await?;
+    relay(client, &mut server, logs, group, &serial, id, &token).await?;
+    Ok(())
+        } => result
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn select_device(
+    access: &Access,
+    sessions: &Sessions,
+    logs: &Logs,
+    group: &Group,
+    serial: &str,
+    id: u64,
+    request: &str,
+) -> Result<CancellationToken> {
+    let access = access.lock().unwrap();
+    let token = access
+        .get(serial)
+        .ok_or("device is disabled or not assigned to this group")?
+        .clone();
+    sessions.lock().unwrap().get_mut(&id).unwrap().serial = serial.into();
+    logs.lock()
+        .unwrap()
+        .event(Some(&group.id), Some(serial), Some(id), "request", request);
+    Ok(token)
+}
+
+// Observe the original bytes without decoding, altering framing, or accumulating a full stream.
+struct Observed<'a> {
+    stream: &'a mut TcpStream,
+    logs: &'a Logs,
+    group: &'a str,
+    serial: &'a str,
+    id: u64,
+    direction: &'a str,
+}
+impl AsyncRead for Observed<'_> {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        let before = buf.filled().len();
+        let result = Pin::new(&mut *self.stream).poll_read(cx, buf);
+        if let Poll::Ready(Ok(())) = &result {
+            let bytes = &buf.filled()[before..];
+            if !bytes.is_empty() {
+                self.logs.lock().unwrap().payload(
+                    self.group,
+                    self.serial,
+                    self.id,
+                    self.direction,
+                    bytes,
+                );
+            }
+        }
+        result
+    }
+}
+impl AsyncWrite for Observed<'_> {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        data: &[u8],
+    ) -> Poll<std::io::Result<usize>> {
+        Pin::new(&mut *self.stream).poll_write(cx, data)
+    }
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut *self.stream).poll_flush(cx)
+    }
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut *self.stream).poll_shutdown(cx)
+    }
+}
+#[allow(clippy::too_many_arguments)]
+async fn relay(
+    client: &mut TcpStream,
+    server: &mut TcpStream,
+    logs: &Logs,
+    group: &Group,
+    serial: &str,
+    id: u64,
+    token: &CancellationToken,
+) -> Result<()> {
+    let mut client = Observed {
+        stream: client,
+        logs,
+        group: &group.id,
+        serial,
+        id,
+        direction: "send",
+    };
+    let mut server = Observed {
+        stream: server,
+        logs,
+        group: &group.id,
+        serial,
+        id,
+        direction: "receive",
+    };
+    tokio::select! { _=token.cancelled()=>{}, result=tokio::io::copy_bidirectional(&mut client,&mut server)=>{result?;} }
     Ok(())
 }

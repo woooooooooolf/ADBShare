@@ -87,6 +87,7 @@ fn group(members: &[&str]) -> Group {
         address: "127.0.0.1".parse().unwrap(),
         port,
         sources: vec!["127.0.0.1".into()],
+        disabled_members: vec![],
         members: members.iter().map(|s| s.to_string()).collect(),
     }
 }
@@ -172,6 +173,72 @@ async fn concurrent_binary_streams_and_stop_revocation() {
     );
     assert!(sessions.lock().unwrap().is_empty());
     assert!(TcpStream::connect((g.address, g.port)).await.is_err());
+}
+#[tokio::test]
+async fn device_disable_revokes_only_its_streams_and_history_captures_binary_both_ways() {
+    let lab = lab().await;
+    let g = group(&["A", "B"]);
+    let logs = gateway::Logs::default();
+    let r = gateway::start(g.clone(), lab.port, logs.clone())
+        .await
+        .unwrap();
+    let mut a = shell(&g, "host:transport:A").await;
+    let mut b = shell(&g, "host:transport:B").await;
+    a.write_all(&[0, 255, 12, 42]).await.unwrap();
+    let mut bytes = [0; 4];
+    a.read_exact(&mut bytes).await.unwrap();
+    assert_eq!(bytes, [0, 255, 12, 42]);
+    {
+        let history = logs.lock().unwrap().view(Some(&g.id), Some("A"));
+        for direction in ["send", "receive"] {
+            assert!(history
+                .records
+                .iter()
+                .any(|r| r.kind == direction && r.hex.contains("00 FF 0C 2A")));
+        }
+        assert!(history
+            .records
+            .iter()
+            .any(|r| r.kind == "service" && r.message == "shell:echo"));
+    }
+    r.set_device_enabled("A", false);
+    assert_eq!(
+        tokio::time::timeout(Duration::from_secs(2), a.read(&mut bytes))
+            .await
+            .unwrap()
+            .unwrap(),
+        0
+    );
+    let mut denied = open(&g, "host:transport:A").await;
+    assert!(adb::read_status(&mut denied).await.is_err());
+    let mut list = open(&g, "host:devices-l").await;
+    adb::read_status(&mut list).await.unwrap();
+    let list = adb::read_frame(&mut list).await.unwrap();
+    assert!(!list.contains("A device"));
+    assert!(list.contains("B device"));
+    b.write_all(b"live").await.unwrap();
+    b.read_exact(&mut bytes).await.unwrap();
+    assert_eq!(&bytes, b"live");
+    assert!(logs
+        .lock()
+        .unwrap()
+        .view(Some(&g.id), Some("A"))
+        .records
+        .iter()
+        .any(|r| r.kind == "disconnect"));
+    r.set_device_enabled("A", true);
+    let mut a = shell(&g, "host:transport:A").await;
+    a.write_all(b"back").await.unwrap();
+    a.read_exact(&mut bytes).await.unwrap();
+    assert_eq!(&bytes, b"back");
+    r.stop().await;
+    assert!(logs
+        .lock()
+        .unwrap()
+        .view(Some(&g.id), Some("A"))
+        .records
+        .iter()
+        .any(|r| r.kind == "sharing-disabled"));
 }
 #[tokio::test]
 async fn stopping_one_group_leaves_another_and_local_upstream_usable() {

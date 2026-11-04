@@ -28,6 +28,8 @@ pub struct Group {
     pub port: u16,
     pub sources: Vec<String>,
     pub members: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub disabled_members: Vec<String>,
 }
 #[derive(Clone, Copy, Debug)]
 pub struct Network {
@@ -83,6 +85,9 @@ impl Config {
             }
             for s in &g.sources {
                 Network::parse(s)?;
+            }
+            if g.disabled_members.iter().any(|s| !g.members.contains(s)) {
+                return Err("禁用设备必须属于当前组".into());
             }
             if g.members
                 .iter()

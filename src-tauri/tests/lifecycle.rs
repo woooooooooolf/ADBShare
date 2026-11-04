@@ -89,6 +89,7 @@ fn group() -> Group {
         address: "127.0.0.1".parse().unwrap(),
         port: 15037,
         sources: vec!["127.0.0.1".into()],
+        disabled_members: vec![],
         members: vec!["A".into()],
     }
 }
@@ -99,13 +100,15 @@ fn app(dir: &std::path::Path, groups: Vec<Group>, backend: Arc<Fake>) -> App {
     };
     let path = dir.join("config.json");
     model::save(&path, &config).unwrap();
+    let logs = gateway::Logs::default();
+    logs.lock().unwrap().configure(&config.groups);
     App {
         path,
         inner: tokio::sync::Mutex::new(Inner {
             config,
             running: HashMap::new(),
         }),
-        logs: Default::default(),
+        logs,
         config_error: None,
         firewall: Arc::new(Firewall {
             ledger: dir.join("firewall-rules.json"),
@@ -299,4 +302,29 @@ fn helper_rejects_unvalidated_rule_names_before_running_commands() {
         adbshare::firewall::helper(&["--firewall-helper".into(), "remove".into(), "*".into()])
             .is_err()
     );
+}
+
+#[tokio::test]
+async fn device_enablement_persists_without_removing_history_or_other_members() {
+    let dir = tempfile::tempdir().unwrap();
+    let backend = Arc::new(Fake::default());
+    let g = group();
+    let app = app(dir.path(), vec![g.clone()], backend);
+    app.set_device_enabled(&g.id, "A", false).await.unwrap();
+    let loaded = model::load(&app.path).unwrap();
+    assert_eq!(loaded.groups[0].members, vec!["A"]);
+    assert_eq!(loaded.groups[0].disabled_members, vec!["A"]);
+    app.set_device_enabled(&g.id, "A", true).await.unwrap();
+    assert!(model::load(&app.path).unwrap().groups[0]
+        .disabled_members
+        .is_empty());
+    let view = app.logs.lock().unwrap().view(Some(&g.id), Some("A"));
+    assert_eq!(
+        view.records
+            .iter()
+            .map(|r| r.kind.as_str())
+            .collect::<Vec<_>>(),
+        vec!["device-disabled", "device-enabled"]
+    );
+    assert!(app.set_device_enabled(&g.id, "OTHER", true).await.is_err());
 }

@@ -50,7 +50,6 @@ pub struct Snapshot {
     runtime: Vec<Runtime>,
     interfaces: Vec<Interface>,
     config_path: String,
-    logs: Vec<String>,
     config_error: Option<String>,
 }
 
@@ -96,6 +95,49 @@ pub fn license_document(kind: String, component: Option<usize>) -> Result<&'stat
 }
 
 impl App {
+    pub async fn set_device_enabled(
+        &self,
+        id: &str,
+        serial: &str,
+        enabled: bool,
+    ) -> Result<(), String> {
+        let mut inner = self.inner.lock().await;
+        self.ensure_open()?;
+        if self.config_error.is_some() {
+            return Err("请先修复配置读取错误".into());
+        }
+        let mut config = inner.config.clone();
+        let group = config
+            .groups
+            .iter_mut()
+            .find(|g| g.id == id)
+            .ok_or("未找到分组")?;
+        if !group.members.iter().any(|s| s == serial) {
+            return Err("未找到设备".into());
+        }
+        group.disabled_members.retain(|s| s != serial);
+        if !enabled {
+            group.disabled_members.push(serial.into());
+        }
+        model::save(&self.path, &config)?;
+        if let Some(r) = inner.running.get(id) {
+            r.set_device_enabled(serial, enabled);
+        }
+        inner.config = config;
+        self.logs.lock().unwrap().event(
+            Some(id),
+            Some(serial),
+            None,
+            if enabled {
+                "device-enabled"
+            } else {
+                "device-disabled"
+            },
+            "",
+        );
+        Ok(())
+    }
+
     pub async fn start_group(&self, id: &str) -> Result<(), String> {
         let mut inner = self.inner.lock().await;
         self.ensure_open()?;
@@ -151,8 +193,9 @@ impl App {
             return Err("仅本机模式不需要防火墙规则".into());
         }
         let firewall = self.firewall.clone();
+        let group_id = id.to_owned();
         let id = id.to_owned();
-        tokio::task::spawn_blocking(move || {
+        let result = tokio::task::spawn_blocking(move || {
             if remove {
                 firewall.remove_group(&id)
             } else {
@@ -160,8 +203,23 @@ impl App {
             }
         })
         .await
-        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())?;
+        self.logs.lock().unwrap().event(
+            Some(&group_id),
+            None,
+            None,
+            if result.is_err() {
+                "error"
+            } else if remove {
+                "rules-removed"
+            } else {
+                "rules-applied"
+            },
+            result.as_ref().err().cloned().unwrap_or_default(),
+        );
+        result
     }
+
     pub fn ensure_open(&self) -> Result<(), String> {
         if self.shutting_down.load(Ordering::SeqCst) {
             return Err("正在退出并清理规则，请稍候".into());
@@ -189,6 +247,7 @@ impl App {
         let mut config = inner.config.clone();
         config.groups.retain(|g| g.id != id);
         model::save(&self.path, &config)?;
+        self.logs.lock().unwrap().configure(&config.groups);
         inner.config = config;
         Ok(())
     }
@@ -306,7 +365,6 @@ pub async fn snapshot(app: State<'_, App>) -> Result<Snapshot, String> {
         runtime,
         interfaces: interfaces(),
         config_path: app.path.display().to_string(),
-        logs: app.logs.lock().unwrap().clone(),
         config_error: app.config_error.clone(),
     })
 }
@@ -316,7 +374,9 @@ pub async fn discover(app: State<'_, App>) -> Result<Vec<protocol::Device>, Stri
     let list = protocol::query(port, "host:devices-l")
         .await
         .map_err(|e| format!("无法连接本机 ADB Server (127.0.0.1:{port})：{e}"))?;
-    Ok(protocol::devices(&list))
+    let devices = protocol::devices(&list);
+    app.logs.lock().unwrap().observe(&devices);
+    Ok(devices)
 }
 #[tauri::command]
 pub async fn save_config(config: Config, app: State<'_, App>) -> Result<(), String> {
@@ -348,6 +408,18 @@ pub async fn save_config(config: Config, app: State<'_, App>) -> Result<(), Stri
         }
     }
     model::save(&app.path, &config)?;
+    {
+        let mut history = app.logs.lock().unwrap();
+        history.configure(&config.groups);
+        for group in &config.groups {
+            let before = inner.config.groups.iter().find(|g| g.id == group.id);
+            for serial in &group.members {
+                if before.is_none_or(|g| !g.members.contains(serial)) {
+                    history.event(Some(&group.id), Some(serial), None, "device-added", "");
+                }
+            }
+        }
+    }
     inner.config = config;
     Ok(())
 }
@@ -388,4 +460,59 @@ pub async fn start_adb(app: State<'_, App>) -> Result<(), String> {
 #[tauri::command]
 pub async fn firewall(id: String, remove: bool, app: State<'_, App>) -> Result<(), String> {
     app.update_firewall(&id, remove).await
+}
+
+#[tauri::command]
+pub async fn history_view(
+    group_id: Option<String>,
+    serial: Option<String>,
+    app: State<'_, App>,
+) -> Result<crate::history::View, String> {
+    if serial.is_some() && group_id.is_none() {
+        return Err("Device history requires a group".into());
+    }
+    Ok(app
+        .logs
+        .lock()
+        .unwrap()
+        .view(group_id.as_deref(), serial.as_deref()))
+}
+#[tauri::command]
+pub async fn reset_history(
+    group_id: Option<String>,
+    serial: Option<String>,
+    app: State<'_, App>,
+) -> Result<(), String> {
+    if serial.is_some() && group_id.is_none() {
+        return Err("Device history requires a group".into());
+    }
+    app.logs
+        .lock()
+        .unwrap()
+        .reset(group_id.as_deref(), serial.as_deref());
+    Ok(())
+}
+#[tauri::command]
+pub async fn set_device_enabled(
+    id: String,
+    serial: String,
+    enabled: bool,
+    app: State<'_, App>,
+) -> Result<(), String> {
+    app.set_device_enabled(&id, &serial, enabled).await
+}
+#[tauri::command]
+pub async fn export_history(content: String) -> Result<bool, String> {
+    tokio::task::spawn_blocking(move || {
+        if content.len() > 64*1024*1024 { return Err("Export is too large".into()); }
+        // The dialog chooses the destination; record contents never enter shell code.
+        let script = r#"$ErrorActionPreference='Stop'; [Console]::OutputEncoding=[Text.UTF8Encoding]::new(); Add-Type -AssemblyName System.Windows.Forms; $owner=New-Object Windows.Forms.Form; $owner.TopMost=$true; $d=New-Object Windows.Forms.SaveFileDialog; $d.Filter='Text files (*.txt)|*.txt'; $d.FileName='ADBShare-history.txt'; try { if ($d.ShowDialog($owner) -eq 'OK') { [Console]::Write($d.FileName) } } finally { $d.Dispose(); $owner.Dispose() }"#;
+        let output=command("powershell.exe").args(["-NoProfile","-NonInteractive","-STA","-Command",script]).output().map_err(|e|e.to_string())?;
+        if !output.status.success() { return Err(String::from_utf8_lossy(&output.stderr).into_owned()); }
+        let path=String::from_utf8(output.stdout).map_err(|e|e.to_string())?;
+        let path=path.trim_start_matches('\u{feff}');
+        if path.is_empty() { return Ok(false); }
+        std::fs::write(path,content).map_err(|e|e.to_string())?;
+        Ok(true)
+    }).await.map_err(|e|e.to_string())?
 }

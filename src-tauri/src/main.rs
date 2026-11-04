@@ -38,6 +38,7 @@ fn main() {
         Err(e) => (model::Config::default(), Some(e)),
     };
     let logs = gateway::Logs::default();
+    logs.lock().unwrap().configure(&config.groups);
     if let Some(e) = &error {
         gateway::log(
             &logs,
@@ -72,8 +73,33 @@ fn main() {
             app::request_exit,
             app::app_info,
             app::license_document,
-            app::third_party_components
+            app::third_party_components,
+            app::history_view,
+            app::reset_history,
+            app::set_device_enabled,
+            app::export_history
         ])
+        .setup(|app| {
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                loop {
+                    let state = handle.state::<App>();
+                    let port = state.inner.lock().await.config.upstream_port;
+                    let result = adbshare::protocol::query(port, "host:devices-l").await;
+                    let inner = state.inner.lock().await;
+                    if inner.config.upstream_port == port {
+                        state
+                            .logs
+                            .lock()
+                            .unwrap()
+                            .observe(&adbshare::protocol::devices(&result.unwrap_or_default()));
+                    }
+                    drop(inner);
+                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                }
+            });
+            Ok(())
+        })
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 if !window
@@ -107,6 +133,7 @@ async fn headless(path: Option<&String>) -> Result<(), Box<dyn std::error::Error
     ))?;
     let mut running = vec![];
     let logs = gateway::Logs::default();
+    logs.lock().unwrap().configure(&config.groups);
     for group in config.groups {
         running.push(gateway::start(group, config.upstream_port, logs.clone()).await?);
     }
