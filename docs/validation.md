@@ -106,3 +106,9 @@
 - TypeScript 严格检查和 Windows Release 构建通过。测试只操作独立配置、虚拟上游及测试窗口，不改变真实 ADB Server 或 Windows 防火墙。
 
 截图：[宽窗口](images/responsive-wide-zh.png)、[窄窗口](images/responsive-small-zh.png)、[小窗口 ADB 提示](images/adb-offline-small-en.png)。
+
+## 2026-11-05：首页去外框
+
+- 移除欢迎区的外层边框、圆角及独立面板底色，内容直接使用主页面背景；保留居中的图标、简介、使用步骤及响应式布局。
+- TypeScript 检查、Vite 与 Windows Release 构建通过；实际程序的浅色 / 深色首页均已视觉检查。
+- 截图：[浅色首页](images/welcome.png)、[深色首页](images/welcome-dark.png)。
