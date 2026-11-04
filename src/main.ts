@@ -1,17 +1,23 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { language, theme, preferences, t, translate, errorText, logText } from './i18n';
+import { language, theme, preferences, t, translate, errorText, logText, eventText } from './i18n';
 import { icons } from './icons';
 import './style.css';
 
-type Group = { id: string; name: string; address: string; port: number; sources: string[]; members: string[] };
+type Group = { id: string; name: string; address: string; port: number; sources: string[]; members: string[]; disabledMembers?: string[] };
 type Config = { version: number; adbPath: string; upstreamPort: number; groups: Group[] };
 type Device = { serial: string; state: string; model: string; transportId: string; kind: string };
 type Session = { id: number; peer: string; serial: string; since: number };
 type Runtime = { id: string; status: string; sessions: Session[] };
 type Interface = { name: string; address: string; cidr: string };
-type Snapshot = { config: Config; runtime: Runtime[]; interfaces: Interface[]; configPath: string; logs: string[]; configError: string | null };
+type Snapshot = { config: Config; runtime: Runtime[]; interfaces: Interface[]; configPath: string; configError: string | null };
 type AppInfo = { name: string; version: string; buildTimestamp: number; author: string; license: string };
+type HistoryRecord = { id: number; time: number; groupId: string | null; serial: string | null; session: number | null; kind: string; message: string; bytes: number; hex: string; text: string };
+type HistoryView = { records: HistoryRecord[]; dropped: number; states: Record<string,string>; perScopeLimit: number; payloadLimit: number };
+let history: HistoryView | null = null;
+let historyGroup = '';
+let historySerial = '';
+let historyRequest = 0;
 let data: Snapshot;
 let devices: Device[] = [];
 let draft: Group | null = null;
@@ -35,10 +41,11 @@ preferences();
 document.querySelector('#app')!.innerHTML = `
 <aside>
   <div class="brand"><span class="brand-icon">${glyph}</span><div>ADBShare<small data-i18n="tagline"></small></div></div>
-  <div class="side-title" data-i18n="groups"></div><nav id="groups"></nav>
+  <button id="group-entry" class="flat-nav">${icons.groups}<span data-i18n="groups"></span><span id="group-count" class="nav-count">0</span></button><nav id="groups"></nav>
   <button id="new-bottom" class="new-group"><span aria-hidden="true">＋</span> <span data-i18n="newGroup"></span></button>
   <div class="side-bottom">
-    <button id="device-entry" class="flat-nav" aria-haspopup="dialog" aria-expanded="false">${icons.devices}<span id="adb-status"></span><i id="adb-dot" class="dot"></i></button>
+    <button id="device-entry" class="flat-nav" aria-haspopup="dialog" aria-expanded="false">${icons.devices}<span id="adb-status" data-i18n="localDevices"></span><span id="device-count" class="nav-count">0</span></button>
+    <button id="history-entry" class="flat-nav" aria-haspopup="dialog" aria-expanded="false">${icons.logs}<span data-i18n="logs"></span></button>
     <button id="settings" class="flat-nav" aria-haspopup="dialog" aria-expanded="false">${icons.settings}<span data-i18n="settings"></span></button>
     <div class="utility-bar">
       <button id="language-toggle" class="square-button">${icons.language}</button>
@@ -48,26 +55,31 @@ document.querySelector('#app')!.innerHTML = `
   </div>
 </aside>
 <main>
-  <header><h1 id="title"></h1><div class="header-actions"><span id="summary" class="quiet"></span><button id="refresh" class="secondary" data-i18n="refresh"></button></div></header>
+  <header id="editor-header" hidden><h1 id="title" data-i18n="groupConfig"></h1><span id="group-state" class="badge"></span></header>
   <div id="notice" role="status" hidden></div>
   <section id="welcome" class="welcome"><div class="welcome-icon">${glyph}</div><h2 data-i18n="welcomeTitle"></h2><p class="welcome-description" data-i18n="welcomeDescription"></p><div class="welcome-steps"><span><b>01</b><span data-i18n="selectDevices"></span></span><span><b>02</b><span data-i18n="endpoint"></span></span><span><b>03</b><span data-i18n="remoteUse"></span></span></div></section>
   <section id="workspace" hidden>
-    <div class="group-heading"><div><span id="group-state" class="badge"></span><span id="draft-label" class="quiet"></span></div><button id="delete-group" class="danger-text" data-i18n="deleteGroup"></button></div>
-    <div class="apply-bar"><span id="apply-hint" class="quiet"></span><div><button id="save" class="secondary" data-i18n="save"></button><button id="toggle" class="primary"></button></div></div>
+    <div class="apply-bar"><span id="apply-hint" class="quiet"></span><div><button id="delete-group" class="danger-button" data-i18n="deleteGroup"></button><button id="save" class="secondary" data-i18n="save"></button><button id="toggle" class="primary"></button></div></div>
     <div class="columns"><div class="configuration">
       <section class="card"><div class="section-head"><span class="step">01</span><div><h2 data-i18n="selectDevices"></h2><p data-i18n="deviceHint"></p></div><span id="member-count" class="count"></span></div><div id="devices"></div></section>
       <section class="card"><div class="section-head"><span class="step">02</span><div><h2 data-i18n="endpoint"></h2><p data-i18n="endpointHint"></p></div></div>
         <div class="form"><label><span data-i18n="name"></span><input id="group-name" maxlength="60" data-placeholder="namePlaceholder"></label><div class="form-row"><label><span data-i18n="adapter"></span><select id="address"></select></label><label class="port"><span data-i18n="port"></span><input id="port" type="number" min="1" max="65535"></label></div>
         <label><span data-i18n="sources"></span><textarea id="sources" rows="2" data-placeholder="sourcesPlaceholder"></textarea></label><p class="field-help" data-i18n="sourceHint"></p></div>
-        <div class="firewall-bar"><span data-i18n="firewall"></span><button id="firewall-add" class="text-btn" data-i18n="firewallAdd"></button><button id="firewall-remove" class="text-btn" data-i18n="firewallRemove"></button></div>
+        <div class="firewall-bar"><span data-i18n="firewall"></span><button id="firewall-add" class="secondary" data-i18n="firewallAdd"></button><button id="firewall-remove" class="secondary" data-i18n="firewallRemove"></button></div>
       </section>
     </div><div class="details">
       <section class="card connect-card"><div class="section-head"><span class="step">03</span><div><h2 data-i18n="remoteUse"></h2><p data-i18n="remoteHint"></p></div></div><div id="connection"></div></section>
       <section class="card"><div class="section-head compact"><h2 data-i18n="connections"></h2><span id="session-count" class="count">0</span></div><div id="sessions"></div></section>
     </div></div>
   </section>
-  <details class="logs"><summary><span data-i18n="logs"></span> <span id="log-count"></span></summary><pre id="logs"></pre><p id="config-path" class="quiet"></p></details>
+
 </main>
+<dialog id="history-dialog" class="history-dialog"><div class="dialog-heading"><h2 data-i18n="logs"></h2><button id="close-history" class="square-button close-button">${icons.close}</button></div>
+  <div class="history-filters"><label><span data-i18n="historyScope"></span><select id="history-group"></select></label><label><span data-i18n="historyDevice"></span><select id="history-device"></select></label></div>
+  <div id="history-status"></div><div id="history-overview"></div>
+  <div class="history-toolbar"><span id="history-count" class="quiet"></span><div><button id="history-copy" class="secondary" data-i18n="copyHistory"></button><button id="history-export" class="secondary" data-i18n="exportHistory"></button><button id="history-reset" class="danger-button" data-i18n="resetHistory"></button></div></div>
+  <p id="history-feedback" role="status" class="quiet"></p><p id="history-limits" class="field-help"></p><pre id="history-records" tabindex="0"></pre><p id="config-path" class="quiet"></p>
+</dialog>
 <dialog id="settings-dialog"><form id="settings-form"><div class="dialog-heading"><h2 data-i18n="settings"></h2><button type="button" id="close-settings" class="square-button close-button">${icons.close}</button></div><p class="quiet" data-i18n="settingsHint"></p><label><span data-i18n="adbPath"></span><input id="adb-path" data-placeholder="adbPathPlaceholder"></label><label><span data-i18n="upstreamPort"></span><input id="upstream-port" type="number" min="1" max="65535"></label><p class="field-help" data-i18n="settingsPortHint"></p><div class="dialog-actions"><button type="button" id="start-adb" class="secondary" data-i18n="startAdb"></button><button type="submit" class="primary" data-i18n="save"></button></div></form></dialog>
 <dialog id="local-devices-dialog" class="wide-dialog"><div class="dialog-heading"><h2><span data-i18n="localDevices"></span> <span id="local-count" class="count"></span></h2><div class="header-actions"><button id="local-refresh" class="secondary" data-i18n="refresh"></button><button id="close-devices" class="square-button close-button">${icons.close}</button></div></div><div id="local-device-list"></div></dialog>
 <dialog id="about-dialog" class="wide-dialog"><div class="dialog-heading"><h2 data-i18n="about"></h2><button id="close-about" class="square-button close-button">${icons.close}</button></div><div class="about-tabs"><button data-tab="overview" data-i18n="overview"></button><button data-tab="project" data-i18n="projectLicense"></button><button data-tab="thirdParty" data-i18n="thirdParty"></button></div><div id="about-summary"></div><label id="component-picker" hidden><span data-i18n="component"></span><select id="license-component"></select></label><pre id="license-document" hidden tabindex="0" lang="en"></pre></dialog>
@@ -75,7 +87,7 @@ document.querySelector('#app')!.innerHTML = `
 <dialog id="shutdown-dialog"><h2 id="shutdown-title"></h2><p id="shutdown-text"></p><div id="shutdown-actions" class="dialog-actions" hidden><button id="shutdown-back" class="secondary" data-i18n="back"></button><button id="shutdown-retry" class="primary" data-i18n="retryExit"></button></div></dialog>`;
 
 function clearNotice() { clearTimeout(noticeTimer); $('notice').hidden = true; $('notice').textContent = ''; }
-function notify(text: string, error = false) { clearNotice(); const n = $('notice'); n.hidden = false; n.className = error ? 'error' : 'success'; n.textContent = text; if (!error) noticeTimer = setTimeout(clearNotice, 3000); }
+function notify(text: string, error = false) { clearNotice(); const n = $('notice'); n.hidden = false; n.className = error ? 'error' : 'success'; n.textContent = text; if (dialog('history-dialog').open) $('history-feedback').textContent=text; if (!error) noticeTimer = setTimeout(clearNotice, 3000); }
 async function action(fn: () => Promise<void>) {
   if (busy) return; busy = true; document.body.classList.add('busy'); renderState();
   try { await fn(); } catch (e) { console.error(e); notify(errorText(e), true); }
@@ -88,7 +100,7 @@ function confirmAction(title: string, text: string): Promise<boolean> {
     $('confirm-yes').onclick = () => finish(true); $('confirm-no').onclick = () => finish(false); dialog('confirm-dialog').oncancel = () => finish(false);
   });
 }
-async function sync() { data = await invoke<Snapshot>('snapshot'); renderSide(); renderState(); }
+async function sync() { data = await invoke<Snapshot>('snapshot'); renderSide(); renderState(); if(dialog('history-dialog').open) await refreshHistory(); }
 function markDirty() { dirty = true; clearNotice(); renderSide(); renderState(); }
 function stateLabel(state: string) { return ({device:t('online'),offline:t('offline'),unauthorized:t('unauthorized'),absent:t('absent')} as Record<string,string>)[state] || state; }
 function renderSide() {
@@ -99,11 +111,10 @@ function renderSide() {
     return `<button class="group-item ${draft?.id === g.id ? 'selected' : ''}" data-group="${esc(g.id)}"><span class="group-icon">▦</span><span><strong>${esc(g.id === draft?.id ? draft.name : g.name)}</strong><small>${t('deviceCount',{n:g.members.length})} · ${r ? t(r.status==='running'?'running':'failed') : t('stopped')}</small></span><i class="dot ${r?.status==='running'?'online':''}"></i></button>`;
   }).join('');
   $('groups').querySelectorAll<HTMLButtonElement>('[data-group]').forEach(b => b.onclick = () => void selectGroup(b.dataset.group!));
-  $('summary').textContent = t('runningCount',{n:data.runtime.filter(r=>r.status==='running').length});
+  $('group-count').textContent = String(groups.length);
+  $('group-entry').classList.toggle('selected', !draft);
   $('config-path').textContent = `${t('configPath')}: ${data.configPath}`;
-  $('log-count').textContent = String(data.logs.length);
-  $('logs').textContent = data.logs.map(l=>{const p=l.indexOf(' '); return `${new Date(Number(l.slice(0,p))*1000).toLocaleTimeString(language==='zh'?'zh-CN':'en-US')} ${logText(l.slice(p+1))}`;}).join('\n') || t('noLogs');
-  $('title').textContent = t(draft?'groupConfig':'groups');
+  $('editor-header').hidden = !draft;
 }
 function renderAddressOptions() {
   if (!draft) return;
@@ -129,14 +140,15 @@ function renderDevices() {
   $('devices').innerHTML = list.length ? list.map(d=>`<label class="device-row"><input type="checkbox" data-serial="${esc(d.serial)}" ${draft!.members.includes(d.serial)?'checked':''} ${locked()?'disabled':''}><span class="device-icon">${icons.devices}</span><span class="device-name"><strong>${esc(d.model || (d.state==='absent'?t('assigned'):d.serial))}</strong><code>${esc(d.serial)}</code></span><span class="device-state ${d.state==='device'?'ready':''}">${esc(stateLabel(d.state))}</span></label>`).join('') : `<div class="empty"><strong>${t(connected?'noDevices':'adbOffline')}</strong><p>${connected?t('connectDevice'):errorText(adbError || t('noUpstream'))}</p><button id="empty-settings" class="text-btn">${t('openSettings')}</button></div>`;
   $('devices').querySelectorAll<HTMLInputElement>('[data-serial]').forEach(input=>input.onchange=()=>{
     if (!draft) return; const s=input.dataset.serial!;
-    draft.members=input.checked?[...new Set([...draft.members,s])]:draft.members.filter(m=>m!==s); markDirty();
+    draft.members=input.checked?[...new Set([...draft.members,s])]:draft.members.filter(m=>m!==s); draft.disabledMembers=(draft.disabledMembers || []).filter(m=>draft!.members.includes(m)); markDirty();
   });
   if ($('empty-settings')) $('empty-settings').onclick=openSettings;
 }
 function renderLocalDevices() {
-  $('adb-status').textContent = `${t('localDevices')} ${devices.length}`;
+  $('adb-status').textContent = t('localDevices');
+  $('device-count').textContent = String(devices.length);
   $('device-entry').title = connected?t('localDevices'):t('adbOffline');
-  $('adb-dot').className = `dot ${connected?'online':'warning'}`;
+  $('device-entry').classList.toggle('adb-offline',!connected);
   $('local-count').textContent = String(devices.length);
   $('local-device-list').innerHTML = devices.length ? `<table><thead><tr><th>${t('model')}</th><th>${t('serial')}</th><th>${t('state')}</th><th>${t('transport')}</th></tr></thead><tbody>${devices.map(d=>`<tr><td>${esc(d.model || '—')}</td><td><code>${esc(d.serial)}</code></td><td><span class="device-state ${d.state==='device'?'ready':''}">${esc(stateLabel(d.state))}</span></td><td>${t(d.kind==='usb'?'usb':'localTransport')}</td></tr>`).join('')}</tbody></table>` : `<div class="empty"><strong>${t(connected?'noDevices':'adbOffline')}</strong><p>${connected?t('connectDevice'):errorText(adbError || t('noUpstream'))}</p></div>`;
 }
@@ -147,19 +159,21 @@ function commands() {
   return [`${base} devices -l`,`${base} -s ${arg} shell`];
 }
 function renderState() {
+  if(history && dialog('history-dialog').open)renderHistory();
   if (!data || !draft) return;
   const r=runtime(); const running=r?.status==='running'; const disabled=locked();
-  $('group-state').textContent = r?t(running?'running':'failed'):t(data.config.groups.some(g=>g.id===draft!.id)?'stopped':'newState');
+  $('group-state').hidden = !r;
+  $('group-state').textContent = r?t(running?'running':'failed'):'';
   $('group-state').className = `badge ${running?'active':''}`;
-  $('draft-label').textContent=t(dirty?'unsaved':'saved'); $('member-count').textContent=t('selectedCount',{n:draft.members.length});
+  $('member-count').textContent=t('selectedCount',{n:draft.members.length});
   for (const id of ['group-name','port','address','sources']) $<HTMLInputElement>(id).disabled=disabled || busy;
   $('devices').querySelectorAll<HTMLInputElement>('input').forEach(e=>e.disabled=disabled || busy);
   $<HTMLButtonElement>('save').disabled=disabled || busy || !dirty;
   $<HTMLButtonElement>('toggle').disabled=busy; $('toggle').textContent=t(r?'stop':dirty?'saveStart':'start'); $('toggle').className=r?'stop-button':'primary';
   $<HTMLButtonElement>('delete-group').disabled=busy;
-  $<HTMLButtonElement>('firewall-add').disabled=busy || dirty || draft.address.startsWith('127.');
+  $<HTMLButtonElement>('firewall-add').disabled=busy || locked() && dirty || draft.address.startsWith('127.');
   $<HTMLButtonElement>('firewall-remove').disabled=busy || !data.config.groups.some(g=>g.id===draft!.id);
-  $('apply-hint').textContent=t(disabled?'editStopped':dirty?'changesPending':'readyToStart');
+  $('apply-hint').textContent=disabled?t('editStopped'):'';
   const cmd=commands();
   $('connection').innerHTML=`<div class="endpoint"><span>${t(draft.address.startsWith('127.')?'localOnly':'endpoint')}</span><strong>${esc(draft.address)}<em>:${draft.port}</em></strong><small>${t(running?'listening':'notListening')}</small></div>${dirty?`<p class="draft-warning">${t('commandPreview')}</p>`:''}${cmd.map((c,i)=>`<div class="command"><span>${t(i===0?'listCommand':'shellCommand')}</span><code>${esc(c)}</code><button class="text-btn copy" data-command="${i}">${t('copy')}</button></div>`).join('')}`;
   $('connection').querySelectorAll<HTMLButtonElement>('.copy').forEach(b=>b.onclick=()=>void action(async()=>{await navigator.clipboard.writeText(cmd[Number(b.dataset.command)]);notify(t('copied'));}));
@@ -167,12 +181,63 @@ function renderState() {
   $('sessions').innerHTML=sessions.length?sessions.map(s=>`<div class="session"><i class="dot online"></i><div><code>${esc(s.peer)}</code><small>${esc(s.serial==='协商中'?(language==='zh'?'协商中':'Negotiating'):s.serial)} · ${new Date(s.since*1000).toLocaleTimeString(language==='zh'?'zh-CN':'en-US')}</small></div></div>`).join(''):`<div class="small-empty">${t(running?'noConnections':'startForConnections')}</div>`;
 }
 function applyLanguage() {
-  translate(); renderSide(); renderState(); renderDevices(); renderAddressOptions(); renderLocalDevices(); renderAbout();
+  translate(); renderSide(); renderState(); renderDevices(); renderAddressOptions(); renderLocalDevices(); renderAbout(); if(history)renderHistory();
   $('language-toggle').title=t('switchLanguage'); $('language-toggle').setAttribute('aria-label',t('switchLanguage')); $('language-toggle').setAttribute('aria-pressed',String(language==='en'));
   $('theme-toggle').innerHTML=theme==='dark'?icons.sun:icons.moon;
   $('theme-toggle').title=t(theme==='dark'?'lightMode':'darkMode'); $('theme-toggle').setAttribute('aria-label',t(theme==='dark'?'lightMode':'darkMode')); $('theme-toggle').setAttribute('aria-pressed',String(theme==='dark'));
   $('about').title=t('about'); $('about').setAttribute('aria-label',t('about'));
   document.querySelectorAll<HTMLElement>('.close-button').forEach(b=>{b.title=t('close');b.setAttribute('aria-label',t('close'));});
+}
+function groupStatus(id: string) {const r=data.runtime.find(r=>r.id===id);return t(r?r.status==='running'?'running':'failed':'stopped');}
+function historyScope() { return {groupId:historyGroup || null, serial:historySerial || null}; }
+async function refreshHistory() {
+  if(historyGroup && !data.config.groups.some(g=>g.id===historyGroup)){historyGroup='';historySerial='';}
+  if(historySerial && !data.config.groups.find(g=>g.id===historyGroup)?.members.includes(historySerial))historySerial='';
+  const request=++historyRequest;
+  const view=await invoke<HistoryView>('history_view',historyScope());
+  if(request!==historyRequest || !dialog('history-dialog').open)return;
+  history=view;renderHistory();
+}
+function recordText(r: HistoryRecord) {
+  const group=data.config.groups.find(g=>g.id===r.groupId)?.name || r.groupId || t('allGroups');
+  const prefix=`[${new Date(r.time).toLocaleString(language==='zh'?'zh-CN':'en-US')}] ${group}${r.serial?` / ${r.serial}`:''}${r.session!==null?` #${r.session}`:''} · ${eventText(r.kind)}`;
+  if(r.bytes) return `${prefix} · ${r.bytes} B${r.bytes>(history?.payloadLimit || 512)?` · ${t('historyPreview')}`:''}\nHEX  ${r.hex}\nTEXT ${r.text}`;
+  return `${prefix}${r.message?`: ${r.kind==='device-state'?stateLabel(r.message):logText(r.message)}`:''}`;
+}
+function historyText() {
+  if(!history)return '';
+  return [`ADBShare · ${data.config.groups.find(g=>g.id===historyGroup)?.name || t('allGroups')}${historySerial?` / ${historySerial}`:''}`,t('historyLimits',{n:history.perScopeLimit,bytes:history.payloadLimit}),t('historyDropped',{n:history.dropped}),'',...history.records.map(recordText)].join('\n');
+}
+function renderHistory() {
+  if(!history || !data)return;
+  const group=data.config.groups.find(g=>g.id===historyGroup);
+  $('history-group').innerHTML=`<option value="">${t('allGroups')}</option>${data.config.groups.map(g=>`<option value="${esc(g.id)}">${esc(g.name)}</option>`).join('')}`;
+  $<HTMLSelectElement>('history-group').value=historyGroup;$<HTMLSelectElement>('history-group').disabled=busy;
+  $('history-device').innerHTML=`<option value="">${t('allDevices')}</option>${(group?.members || []).map(s=>`<option value="${esc(s)}">${esc(s)}</option>`).join('')}`;
+  $<HTMLSelectElement>('history-device').value=historySerial;$<HTMLSelectElement>('history-device').disabled=!group || busy;
+  const active=data.runtime.filter(r=>r.status==='running');
+  $('history-status').textContent=group?`${group.name} · ${groupStatus(group.id)}`:`${t('groupTotal',{n:data.config.groups.length})} · ${t('runningCount',{n:active.length})} · ${t('connectionTotal',{n:active.reduce((n,r)=>n+r.sessions.length,0)})}`;
+  const overview=group?group.members.filter(s=>!historySerial || s===historySerial).map(serial=>{
+    const disabled=group.disabledMembers?.includes(serial);
+    const state=history!.states[serial] || 'absent';
+    const sharing=data.runtime.some(r=>r.id===group.id && r.status==='running');
+    const count=data.runtime.find(r=>r.id===group.id)?.sessions.filter(s=>s.serial===serial).length || 0;
+    return `<div class="history-row"><button class="history-drill" data-history-serial="${esc(serial)}"><strong>${esc(serial)}</strong><small>${esc(stateLabel(state))} · ${t(disabled?'disabled':'enabled')}${!sharing?` · ${t('historyGroupStopped')}`:''} · ${t('connectionTotal',{n:count})}</small></button><button class="secondary" data-device-toggle="${esc(serial)}" ${busy?'disabled':''}>${t(disabled?'enableDevice':'disableDevice')}</button></div>`;
+  }).join('') || `<p class="quiet">${t('deviceEmpty')}</p>`:data.config.groups.map(g=>`<button class="history-row history-drill" data-history-group="${esc(g.id)}"><strong>${esc(g.name)}</strong><small>${groupStatus(g.id)} · ${t('deviceCount',{n:g.members.length})}</small><span>${t('historyDetails')} →</span></button>`).join('') || `<p class="quiet">${t('groupEmpty')}</p>`;
+  if($('history-overview').innerHTML!==overview)$('history-overview').innerHTML=overview;
+  $('history-overview').querySelectorAll<HTMLButtonElement>('[data-history-group]').forEach(b=>b.onclick=()=>{historyGroup=b.dataset.historyGroup!;historySerial='';void action(refreshHistory);});
+  $('history-overview').querySelectorAll<HTMLButtonElement>('[data-history-serial]').forEach(b=>b.onclick=()=>{historySerial=b.dataset.historySerial!;void action(refreshHistory);});
+  $('history-overview').querySelectorAll<HTMLButtonElement>('[data-device-toggle]').forEach(b=>b.onclick=()=>void action(async()=>{
+    const serial=b.dataset.deviceToggle!;await invoke('set_device_enabled',{id:historyGroup,serial,enabled:!!group?.disabledMembers?.includes(serial)});
+    await sync();if(draft?.id===historyGroup)draft.disabledMembers=[...(data.config.groups.find(g=>g.id===historyGroup)?.disabledMembers || [])];
+  }));
+  $('history-overview').querySelectorAll<HTMLButtonElement>('.history-drill').forEach(b=>b.disabled=busy);
+  $('history-count').textContent=`${t('historyCount',{n:history.records.length})} · ${t('historyDropped',{n:history.dropped})}`;
+  $('history-limits').textContent=t('historyLimits',{n:history.perScopeLimit,bytes:history.payloadLimit});
+  const pre=$('history-records');const atEnd=pre.scrollTop+pre.clientHeight>=pre.scrollHeight-12;const scroll=pre.scrollTop;
+  pre.textContent=(history.records.length>512?`${t('historyRecent')}\n\n`:'')+(history.records.slice(-512).map(recordText).join('\n\n') || t('noLogs'));
+  pre.scrollTop=atEnd?pre.scrollHeight:scroll;
+  for(const id of ['history-copy','history-export','history-reset'])$<HTMLButtonElement>(id).disabled=busy || !history.records.length && !history.dropped;
 }
 function renderAbout() {
   if (!info) return;
@@ -224,10 +289,18 @@ function openSettings() {
   $<HTMLInputElement>('adb-path').value=data.config.adbPath;$<HTMLInputElement>('upstream-port').value=String(data.config.upstreamPort);dialog('settings-dialog').showModal();
 }
 $('new-bottom').onclick=()=>void newGroup();$('settings').onclick=openSettings;
+$('group-entry').onclick=()=>void action(async()=>{if(!await mayDiscard())return;draft=null;dirty=false;renderEditor();});
+$('history-entry').onclick=()=>void action(async()=>{historyGroup='';historySerial='';dialog('history-dialog').showModal();await refreshHistory();});
+$('close-history').onclick=()=>{historyRequest++;dialog('history-dialog').close();};
+$('history-group').onchange=()=>{historyGroup=$<HTMLSelectElement>('history-group').value;historySerial='';void action(refreshHistory);};
+$('history-device').onchange=()=>{historySerial=$<HTMLSelectElement>('history-device').value;void action(refreshHistory);};
+$('history-copy').onclick=()=>void action(async()=>{await navigator.clipboard.writeText(historyText());$('history-feedback').textContent=t('historyCopied');});
+$('history-export').onclick=()=>void action(async()=>{if(await invoke<boolean>('export_history',{content:historyText()}))$('history-feedback').textContent=t('historyExported');});
+$('history-reset').onclick=async()=>{if(!await confirmAction(t('resetHistory'),t('resetHistoryText')))return;void action(async()=>{await invoke('reset_history',historyScope());await refreshHistory();$('history-feedback').textContent=t('historyReset');});};
 $('close-settings').onclick=()=>dialog('settings-dialog').close();
 $('device-entry').onclick=()=>{renderLocalDevices();dialog('local-devices-dialog').showModal();};
 $('close-devices').onclick=()=>dialog('local-devices-dialog').close();
-for (const [modal,button] of [['settings-dialog','settings'],['local-devices-dialog','device-entry'],['about-dialog','about']]) {
+for (const [modal,button] of [['settings-dialog','settings'],['local-devices-dialog','device-entry'],['about-dialog','about'],['history-dialog','history-entry']]) {
   dialog(modal).addEventListener('close',()=>$(button).setAttribute('aria-expanded','false'));
   dialog(modal).addEventListener('toggle',()=>$(button).setAttribute('aria-expanded',String(dialog(modal).open)));
 }
@@ -237,7 +310,7 @@ $('about').onclick=()=>void action(async()=>{info=info || await invoke<AppInfo>(
 $('close-about').onclick=()=>dialog('about-dialog').close();
 document.querySelectorAll<HTMLButtonElement>('[data-tab]').forEach(b=>b.onclick=()=>void showAboutTab(b.dataset.tab as typeof aboutTab));
 $('license-component').onchange=()=>void loadLicense();
-for (const id of ['refresh','local-refresh']) $(id).onclick=()=>void action(async()=>{await refreshDevices();await sync();if (!connected) notify(errorText(adbError),true);});
+for (const id of ['local-refresh']) $(id).onclick=()=>void action(async()=>{await refreshDevices();await sync();if (!connected) notify(errorText(adbError),true);});
 $('group-name').oninput=()=>{if(draft){draft.name=$<HTMLInputElement>('group-name').value;markDirty();}};
 $('port').oninput=()=>{if(draft){draft.port=Number($<HTMLInputElement>('port').value);markDirty();}};
 $('sources').oninput=()=>{if(draft){draft.sources=$<HTMLTextAreaElement>('sources').value.split(/[,;\s]+/).filter(Boolean);markDirty();}};
@@ -254,7 +327,12 @@ $('delete-group').onclick=async()=>{
   void action(async()=>{clearNotice();try{if(data.config.groups.some(g=>g.id===draft!.id))await invoke('delete_group',{id:draft!.id});}catch(e){await sync();renderEditor();throw e;}
     draft=null;dirty=false;await sync();if(data.config.groups[0])draft=structuredClone(data.config.groups[0]);renderEditor();});
 };
-for(const remove of [false,true])$(remove?'firewall-remove':'firewall-add').onclick=()=>void action(async()=>{await invoke('firewall',{id:draft!.id,remove});notify(t(remove?'ruleRemoved':'ruleAdded'));});
+for(const remove of [false,true])$(remove?'firewall-remove':'firewall-add').onclick=()=>void action(async()=>{
+  if(!draft)return;
+  if(!remove && dirty)await save();
+  try {await invoke('firewall',{id:draft.id,remove});notify(t(remove?'ruleRemoved':'ruleAdded'));}
+  finally {await sync();renderEditor();}
+});
 async function saveSettings() {
   const config=structuredClone(data.config);config.adbPath=$<HTMLInputElement>('adb-path').value.trim();config.upstreamPort=Number($<HTMLInputElement>('upstream-port').value);
   await invoke('save_config',{config});await sync();
@@ -268,7 +346,7 @@ applyLanguage();
 async function boot() {
   try {
     await listen<{error:string|null}>('shutdown-state',async({payload})=>{
-      for(const id of ['settings-dialog','confirm-dialog','local-devices-dialog','about-dialog'])dialog(id).close();
+      for(const id of ['settings-dialog','confirm-dialog','local-devices-dialog','about-dialog','history-dialog'])dialog(id).close();
       $('shutdown-title').textContent=t(payload.error?'exitFailed':'exiting');
       $('shutdown-text').textContent=payload.error?`${t('exitError')} ${errorText(payload.error)}`:t('exitPending');
       $('shutdown-actions').hidden=!payload.error;if(!dialog('shutdown-dialog').open)dialog('shutdown-dialog').showModal();if(payload.error){await sync();renderEditor();}

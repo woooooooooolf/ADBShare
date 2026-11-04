@@ -1,6 +1,15 @@
 export type Language = 'zh' | 'en';
 export type Theme = 'light' | 'dark';
 const zh = {
+  historyScope: '查看范围', historyDevice: '设备', allGroups: '全局状态', allDevices: '全部设备',
+  copyHistory: '复制记录', exportHistory: '保存到文件', resetHistory: '重置记录', resetHistoryText: '清除当前查看范围内的历史记录？此操作无法撤销。',
+  historyCopied: '记录已复制', historyExported: '记录已保存', historyReset: '记录已重置',
+  historyCount: '{n} 条记录', historyDropped: '已淘汰 {n} 条旧记录',
+  historyLimits: '仅保留本次运行的历史：每组 / 每设备最多 {n} 条，全局最多 8192 条；每个数据块预览前 {bytes} 字节。超出部分会标明，完整内容需在远端自行保存。',
+  historyPreview: '预览截断', historyRecent: '窗口显示最新 512 条，复制或导出包含当前范围内全部保留记录。',
+  enabled: '已启用', disabled: '已禁用', enableDevice: '启用设备', disableDevice: '禁用设备',
+  groupTotal: '{n} 个共享组', connectionTotal: '{n} 个连接', groupEmpty: '暂无共享组', deviceEmpty: '组内暂无设备',
+  historyDetails: '查看记录', historyGroupStopped: '组已停止', send: '远端 → 设备', receive: '设备 → 远端',
   tagline: '局域网设备共享', groups: '共享组', groupConfig: '共享组配置', newGroup: '新建共享组', newName: '新的共享组',
   localDevices: '本机设备列表', settings: '本机 ADB 设置', checking: '正在连接 ADB', adbOffline: 'ADB 未连接',
   refresh: '刷新', welcomeTitle: '局域网 ADB 设备共享', welcomeDescription: '将本机设备分组，供局域网中的电脑使用 ADB 工具访问。',
@@ -11,7 +20,7 @@ const zh = {
   deviceHint: '勾选组内设备。', endpointHint: '选择网卡和允许接入的主机。',
   name: '组名', namePlaceholder: '例如：Android 调试组', adapter: '网卡', port: '端口', sources: '来源 IP / 网段',
   sourcesPlaceholder: '192.168.1.0/24 或 192.168.1.20', sourceHint: '多个地址用逗号或换行分隔。',
-  firewall: '防火墙 · 专用 / 域网络', firewallAdd: '配置放行…', firewallRemove: '移除规则…',
+  firewall: '防火墙 · 专用 / 域网络', firewallAdd: '应用规则', firewallRemove: '移除规则',
   editStopped: '停止共享后可编辑', changesPending: '修改尚未保存', readyToStart: '配置已保存',
   remoteHint: '在远端电脑执行以下命令。', connections: '当前连接', logs: '运行日志', noLogs: '暂无日志', configPath: '配置文件',
   serial: '序列号', model: '型号', state: '状态', transport: '连接方式', usb: 'USB', localTransport: '网络 / 模拟器',
@@ -34,6 +43,15 @@ const zh = {
 };
 type Key = keyof typeof zh;
 const en: Record<Key, string> = {
+  historyScope: 'Scope', historyDevice: 'Device', allGroups: 'Global status', allDevices: 'All devices',
+  copyHistory: 'Copy records', exportHistory: 'Save to file', resetHistory: 'Reset records', resetHistoryText: 'Clear the history in the current scope? This cannot be undone.',
+  historyCopied: 'Records copied', historyExported: 'Records saved', historyReset: 'Records reset',
+  historyCount: '{n} records', historyDropped: '{n} older records evicted',
+  historyLimits: 'In-memory history for this run: up to {n} records per group / device, 8192 total. Each data chunk previews its first {bytes} bytes. Truncation is marked; save complete output on the remote client.',
+  historyPreview: 'Preview truncated', historyRecent: 'Showing the latest 512 records. Copy and export include all retained records in this scope.',
+  enabled: 'Enabled', disabled: 'Disabled', enableDevice: 'Enable device', disableDevice: 'Disable device',
+  groupTotal: '{n} groups', connectionTotal: '{n} connections', groupEmpty: 'No groups yet', deviceEmpty: 'No devices in this group',
+  historyDetails: 'View records', historyGroupStopped: 'Group stopped', send: 'Remote → device', receive: 'Device → remote',
   tagline: 'LAN device sharing', groups: 'Groups', groupConfig: 'Group settings', newGroup: 'New group', newName: 'New group',
   localDevices: 'Local devices', settings: 'Local ADB settings', checking: 'Connecting to ADB', adbOffline: 'ADB unavailable',
   refresh: 'Refresh', welcomeTitle: 'Share ADB devices on your LAN', welcomeDescription: 'Group local devices and access them from other computers with ADB.',
@@ -44,7 +62,7 @@ const en: Record<Key, string> = {
   deviceHint: 'Choose devices for this group.', endpointHint: 'Choose an adapter and allowed clients.',
   name: 'Group name', namePlaceholder: 'e.g. Android debugging', adapter: 'Adapter', port: 'Port', sources: 'Source IP / subnet',
   sourcesPlaceholder: '192.168.1.0/24 or 192.168.1.20', sourceHint: 'Separate addresses with commas or newlines.',
-  firewall: 'Firewall · Private / Domain', firewallAdd: 'Allow access…', firewallRemove: 'Remove rule…',
+  firewall: 'Firewall · Private / Domain', firewallAdd: 'Apply rules', firewallRemove: 'Remove rules',
   editStopped: 'Stop sharing to edit', changesPending: 'Changes not saved', readyToStart: 'Settings saved',
   remoteHint: 'Run these commands on the remote computer.', connections: 'Connections', logs: 'Activity log', noLogs: 'No activity yet', configPath: 'Config file',
   serial: 'Serial', model: 'Model', state: 'Status', transport: 'Transport', usb: 'USB', localTransport: 'Network / emulator',
@@ -104,4 +122,16 @@ export function logText(text: string) {
   return text.replaceAll('开始共享','Sharing started').replaceAll('已停止，连接已关闭','Stopped; connections closed')
     .replaceAll('拒绝连接','Connection denied').replaceAll('监听失败','Listener failed').replaceAll('退出清理失败','Exit cleanup failed')
     .replaceAll('配置加载失败，请检查','Configuration load failed; check');
+}
+
+export function eventText(kind: string) {
+  const names: Record<string,[string,string]> = {
+    'system':['系统','System'], 'group-enabled':['启用组共享','Group sharing enabled'], 'group-disabled':['禁用组共享','Group sharing disabled'],
+    'sharing-enabled':['设备共享已启用','Device sharing enabled'], 'sharing-disabled':['设备共享已禁用','Device sharing disabled'],
+    'device-enabled':['启用设备','Device enabled'], 'device-disabled':['禁用设备','Device disabled'], 'device-added':['设备加入组','Device added'],
+    'device-state':['设备连接状态','Device connection state'], 'connect':['远端连接','Remote connected'], 'disconnect':['远端断开','Remote disconnected'],
+    'request':['ADB 请求','ADB request'], 'service':['设备服务','Device service'], 'error':['错误','Error'], 'denied':['拒绝连接','Connection denied'],
+    'rules-applied':['已应用最新规则','Latest rules applied'], 'rules-removed':['规则已移除','Rules removed'],
+  };
+  return kind==='send'||kind==='receive'?t(kind):names[kind]?.[language==='zh'?0:1] || kind;
 }
