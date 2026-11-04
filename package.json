@@ -1,6 +1,6 @@
 {
   "name": "adbshare",
-  "version": "0.1.0",
+  "version": "0.8.0",
   "author": "wooooooooolf",
   "license": "GPL-3.0-only",
   "private": true,
@@ -15,7 +15,9 @@
     "notices": "node scripts/notices.mjs",
     "notices:check": "node scripts/notices.mjs --check",
     "test:integration": "node scripts/integration.mjs",
-    "test:ui": "node scripts/ui-smoke.mjs"
+    "test:ui": "node scripts/ui-smoke.mjs",
+    "version:check": "node scripts/version.mjs",
+    "package": "pwsh -NoProfile -File scripts/package.ps1"
   },
   "dependencies": {
     "@tauri-apps/api": "2.12.4"

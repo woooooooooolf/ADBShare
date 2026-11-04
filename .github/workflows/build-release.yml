@@ -1,0 +1,112 @@
+name: Build and release
+
+on:
+  push:
+    branches: [main]
+    tags: ['V*.*.*', 'v*.*.*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+
+jobs:
+  windows:
+    name: Windows x64
+    runs-on: windows-2022
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Prepare Rust toolchain
+        run: |
+          rustup show active-toolchain
+          rustup component add rustfmt clippy
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: windows-msvc-${{ hashFiles('rust-toolchain.toml', 'src-tauri/Cargo.lock') }}
+      - name: Install locked dependencies
+        run: |
+          npm ci
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo fetch --locked --target x86_64-pc-windows-msvc --manifest-path src-tauri/Cargo.toml
+      - name: Validate version and notices
+        env:
+          BUILD_REF_TYPE: ${{ github.ref_type }}
+          BUILD_REF_NAME: ${{ github.ref_name }}
+        run: |
+          if ($env:BUILD_REF_TYPE -eq 'tag') { node scripts/version.mjs $env:BUILD_REF_NAME }
+          else { npm run version:check }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run notices:check
+      - name: Check Rust formatting
+        run: cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
+      - name: Lint Rust
+        run: cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+      - name: Test gateway and lifecycle
+        run: npm test
+      - name: Build application
+        run: npm run build:app
+      - name: Test standard adb client
+        run: |
+          $env:ADB_PATH = Join-Path $env:ANDROID_HOME 'platform-tools/adb.exe'
+          if (-not (Test-Path -LiteralPath $env:ADB_PATH)) { throw 'Android Platform Tools not found' }
+          $env:ADB_SHARE_EXE = Join-Path $PWD 'src-tauri/target/release/adbshare.exe'
+          npm run test:integration
+      - name: Package release files
+        run: |
+          ./scripts/package.ps1 -OutputDirectory release
+          node scripts/version.mjs --notes | Set-Content -Encoding utf8 release/release-notes.md
+      - name: Upload build
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-x64-release
+          path: |
+            release/ADBShare-*.exe
+            release/ADBShare-*.zip
+            release/SHA256SUMS
+            release/release-notes.md
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish tagged release
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    needs: windows
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: windows-x64-release
+          path: release
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$RELEASE_TAG" release/ADBShare-*.exe release/ADBShare-*.zip release/SHA256SUMS \
+            --verify-tag --title "ADBShare $RELEASE_TAG" --notes-file release/release-notes.md

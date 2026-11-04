@@ -1,7 +1,8 @@
 param([string]$Exe = '')
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
-if (-not $Exe) { $Exe = Join-Path $root 'artifacts\ADBShare-0.1.0-windows-x64.exe' }
+$version = (Get-Content -LiteralPath (Join-Path $root 'package.json') -Raw | ConvertFrom-Json).version
+if (-not $Exe) { $Exe = Join-Path $root "artifacts\$version\ADBShare-$version-windows-x64.exe" }
 if (-not (Test-Path -LiteralPath $Exe)) { throw "EXE 不存在：$Exe" }
 $fixture = Join-Path $PSScriptRoot 'fixture.mjs'
 $out = Join-Path $root 'work\demo-fixture.log'

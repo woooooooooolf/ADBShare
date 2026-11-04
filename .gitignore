@@ -6,3 +6,5 @@ src-tauri/gen/
 work/
 artifacts/
 *.log
+release/
+data/

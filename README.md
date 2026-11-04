@@ -1,96 +1,56 @@
 # ADBShare
 
-基于 Tauri 2 / Rust / TypeScript 的 Windows 局域网 ADB 共享原型。将本机已有 ADB Server 的设备分组，让远端使用标准 `adb -H 主机 -P 端口` 访问获准设备。本机仍可使用原来的 `adb shell`，不需要将 Android 设备改为网络调试模式。
+![首次运行主界面](docs/images/welcome.png)
 
-## 试用
+将本机连接的 Android 设备按组共享给局域网中的电脑，远端使用标准 `adb -H / -P` 命令访问。本机继续使用原有 ADB Server，无需将设备切换为网络调试模式。
 
-运行 `artifacts/ADBShare-0.1.0-windows-x64.exe`。它是应用 EXE，无需安装本工具；Windows 需要 WebView2 Runtime。本工具不内置 Platform Tools，实际设备连接由本机已有的 ADB Server 管理。
+## 功能
 
-1. 用本机 ADB 连接设备，在设备上允许 USB 调试。
-2. 打开 ADBShare。若显示“本机 ADB 未连接”，进入左下角“本机 ADB 设置”，填写 adb 路径，点击“启动本机 ADB”。也可在外部运行 `adb start-server`。
-3. 点击侧栏的“新建共享组”，勾选设备，选择实际局域网网卡和一个空闲端口。
-4. 检查“允许的来源 IP / 网段”。默认取所选网卡子网，可改为一台或多台主机的 IPv4；支持逗号、空格、换行分隔。
-5. 保存配置，或直接点击“保存并共享”。启用共享组时自动应用最新防火墙规则；仅配置专用/域网络的本程序、指定地址、端口及来源，防火墙辅助进程可能请求 UAC。
-6. 在获准远端主机运行右侧命令。例如：
+- 多组共享与设备隔离，限制允许接入的来源 IP / 网段。
+- 共享组和单设备独立启停，防火墙规则管理与共享状态联动。
+- 全局、组、设备三级运行日志，支持交互预览、复制、导出和重置。
+- 中英文界面、明暗主题，Windows x64 便携运行。
+
+## 下载与使用
+
+从 [Releases](https://github.com/woooooooooolf/ADBShare/releases) 下载独立 EXE 或便携 ZIP。运行需要 **Windows x64、WebView2 Runtime 和 Android Platform Tools**；本项目不内置 adb。
+
+1. 用本机 ADB 连接设备，并在设备上允许 USB 调试。必要时在“本机 ADB 设置”中启动 Server。
+2. 新建共享组，选择设备、局域网网卡、空闲端口和允许的来源地址。
+3. 点击“保存并共享”，按提示批准防火墙规则配置。
+4. 在获准的远端电脑执行界面中的命令：
 
 ```powershell
 adb -H 192.168.1.10 -P 15037 devices -l
 adb -H 192.168.1.10 -P 15037 -s SERIAL shell
-adb -H 192.168.1.10 -P 15037 -s SERIAL logcat
-adb -H 192.168.1.10 -P 15037 -s SERIAL push test.txt /data/local/tmp/
 ```
 
-“监听已就绪”只表示本地监听成功，双机可达还取决于路由、网络类型和防火墙。选 `127.0.0.1` 时仅供同机测试，无法从其它电脑访问。
+停止组保留防火墙规则；移除规则会先停止组，删除组和退出程序会清理规则。配置保存在 EXE 同级的 `data/`，重开程序不会自动恢复共享。日志仅保存在本次运行的内存中，交互数据为有上限的预览。
 
-运行中请先停止组再编辑；删除组时会自动停止该组共享、清理规则，再删除配置。清理失败或取消 UAC 时会保留组供重试。关闭主窗口会停止所有共享并清理创建的规则；清理未完成时保留窗口，可以重试退出。重新打开保留配置，但不会自动开始共享。设备暂时断开不会丢失组成员关系。同一设备可以属于多个组，不实现互斥或多人操作仲裁。
+仅在可信局域网使用。当前不提供账户认证或加密，不支持跨主机 `forward/reverse`，不承诺 IDE 或投屏兼容性。真机、双机 LAN 与实际 UAC 防火墙操作的验证边界见 [验证记录](docs/validation.md)。
 
-配置保存于 EXE 同级的 `data/config.json`；请放在可写目录。`ADB_SHARE_DATA_DIR` 可以覆盖配置目录。损坏配置会显示错误并阻止覆盖，需要修复或移走后重启。
+## 开发
 
-侧栏“共享组”和“本机设备列表”均按图标、文字、右对齐数量排列；共享组入口显示配置组数，点击回到使用简介。本机设备入口显示实际发现数量，点击可查看完整列表；“本机 ADB 设置”为独立按钮。最底部三个方形图标分别切换语言、切换主题和打开关于页。语言与主题偏好会保存在本机，切换不会丢失当前编辑内容。两套配色分别使用白色 / 淡紫 / 草绿和黑色 / 天蓝 / 黄色，均无阴影、无渐变。
-
-侧栏“运行日志”打开独立对话框。可查看全局共享与连接状态、进入组查看各设备状态，再点击设备查看 ADB 请求、服务及双向原始字节预览（HEX / 文本）。设备的启用 / 禁用独立于移出组：禁用立即撤销该设备的当前连接，阻止后续访问，保留成员与历史；启用状态随配置保存，重开程序仍需手动开始组共享。同一设备在其他组的共享不受影响。
-
-记录仅在内存中保存，退出即清空，不自动写入磁盘。每组事件 / 每组内设备各最多 512 条、全局最多 8192 条；每个数据块保留前 512 字节预览，并显示原始块大小、截断提示和旧记录淘汰数量。长输出不是完整抓包，需在远端保存原始内容。窗口最多显示当前范围最新 512 条，复制 / 导出包含该范围内全部保留记录。保存时可通过系统对话框选择文本文件；重置只清除当前全局 / 组 / 设备范围的历史。设备断开保留记录，从组中移除则清除该组内对应设备记录，删除组清除该组历史。
-
-关于页显示名称、版本、实际构建时间、作者和 GPLv3，并可离线阅读项目许可证和按组件查看第三方声明。
-
-防火墙规则以组 UUID 标识。“应用规则”先保存当前草稿，再更新规则；启用组也会自动应用最新规则。普通“停止共享”只关闭监听和连接，保留规则；“移除规则”先停止该组，再清理规则，清理失败时仍保持停止。删除组和退出程序自动清理规则。仅存在待清理规则时请求 UAC，退出时合并清理多组规则。`data/firewall-rules.json` 记录尚需清理的规则，以便失败或重启后重试，也会识别此前版本为当前 EXE 创建的遗留规则。移动 EXE 后需要重新配置规则。
-
-## 无真机演示
-
-本仓库提供完全隔离的虚拟上游，展示在线、离线和暂未连接设备，模拟简单 shell 与文件传输。需要 Node.js：
-
-```powershell
-.\scripts\demo.ps1
-```
-
-演示使用 `work/demo` 配置和回环监听，不连接真实 ADB Server，不创建防火墙规则。关闭演示窗口会结束虚拟上游。它不能证明真实硬件或双机局域网兼容性。
-
-## 开发与验证
-
-Windows 开发需要 Rust MSVC、Visual Studio C++ Build Tools、Node.js 和 WebView2。
+基于 Tauri 2、Rust 和 TypeScript。需要 Node.js 24、工程指定的 Rust 工具链、Visual Studio C++ Build Tools 和 WebView2。
 
 ```powershell
 npm ci
 cargo fetch --locked --target x86_64-pc-windows-msvc --manifest-path src-tauri/Cargo.toml
 npm run tauri -- dev
-npm run build
+
+# 检查、构建与打包
+npm run version:check
 npm test
 npm run build:app
+npm run package
 ```
 
-编译产物为 `src-tauri/target/release/adbshare.exe`。执行 `scripts/package.ps1` 可复制为命名产物并生成 SHA256SUMS。
+交付文件位于 `artifacts/<版本>/`。运行 `scripts/demo.ps1` 可启动隔离的虚拟设备演示；更多检查见 [验证记录](docs/validation.md)。
 
-`npm run build:app` 在构建时注入时间戳，并生成 Windows 依赖声明。`npm run notices:check` 核对声明是否与锁定依赖一致；声明生成使用已缓存的 crate 原始许可证。未随 crate 打包的原文在 `licenses/supplements` 中保存，其上游版本和来源可追溯。
+## 版本与发布
 
-标准 adb 集成测试会启动原型的 headless 模式和虚拟上游，只在回环地址运行，不触碰真实设备或防火墙：
+**V0.8.0** 为功能初步就绪基线，后续开发基于此版本迭代。GitHub Actions 检查主分支，并在推送版本标签时自动构建 Windows x64 程序及发布附件。详见 [更新记录](CHANGELOG.md) 和 [发布流程](docs/releasing.md)。
 
-```powershell
-cargo build --locked --manifest-path src-tauri/Cargo.toml
-npm run test:integration
-# 实际 Tauri 窗口交互回归（使用独立虚拟上游和配置）：
-npm run test:ui
-# 对最终 Release EXE 验证：
-$env:ADB_SHARE_EXE = "$PWD\artifacts\ADBShare-0.1.0-windows-x64.exe"
-npm run test:integration
-```
+## 许可证
 
-## 当前兼容范围
-
-- 已实现：按序列号过滤 devices / devices-l；文本 track-devices；serial、transport-id、USB/local/any 选择；选定设备后的双向字节流。
-- shell、logcat、sync、安装等设备服务使用字节透传；实际设备/命令的兼容程度以验证记录为准。
-- 不实现 forward/reverse 的跨主机数据端口；相关命令直接拒绝，防止影响其它组的主机资源。
-- 不承诺 Android Studio、投屏、protobuf tracking 或所有 ADB 子命令。
-- 只管理局域网访问范围，来源限制为私有 IPv4/CIDR（另支持回环）。回环访问始终允许；没有账户、口令或加密。
-- 启动前验证上游和监听端口；不接管 USB、不终止/替换本机 ADB Server。
-- 同时打开多个应用实例尚不属于推荐用法；本工具未实现跨实例配置协调。
-
-工程基线见 [docs/design-baseline.md](docs/design-baseline.md)，测试与待验证项见 [docs/validation.md](docs/validation.md)。
-
-## 许可证与源码
-
-Copyright © 2026 wooooooooolf。ADBShare 采用 [GPLv3（GPL-3.0-only）](LICENSE)。第三方组件保留各自许可证，详见 [第三方声明](THIRD_PARTY_NOTICES.txt)。打包目录提供 EXE、许可证、第三方声明和对应源码 ZIP。源码包只包含构建所需的工程文件，不包含本机配置、缓存和 Git 元数据。
-
-当前只进行本地开发，公开仓库待界面与流程调整完成后再建立。
-
-![共享组原型界面](docs/images/sharing.png)
+[GPLv3（GPL-3.0-only）](LICENSE)。第三方组件保留各自许可证，详见 [第三方声明](THIRD_PARTY_NOTICES.txt)。
