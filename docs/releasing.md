@@ -24,7 +24,8 @@ git push origin V0.8.0
 - 使用固定 Node / Rust 版本、锁定依赖和固定提交 SHA 的官方 Actions。
 - 构建阶段仅有仓库只读权限，不保存 checkout 凭据；只有独立发布任务拥有 `contents: write`。
 - 不需要配置个人令牌、签名密钥或其他仓库 Secrets。
-- Windows x64 产物包括独立 EXE、含说明与许可证的便携 ZIP、对应源码 ZIP 和 `SHA256SUMS`。
+- 后续 Windows x64 发布仅上传独立 EXE 和包含其 SHA-256 的 `SHA256SUMS`，不再手工生成便携包或源码包；源码使用 GitHub 自动提供的归档。
+- 已发布的 `V0.8.0` 附件保持原样；本格式调整从后续发布开始生效。
 - 原生窗口交互回归在本机执行；云端运行 Rust 测试及标准 adb 与虚拟上游的集成测试。
 
-运行 `npm run package` 将本地交付文件写入 `artifacts/<版本>/`。源码暂存目录在打包后自动清理；配置、日志、缓存、构建输出和 Git 元数据不会进入源码包。
+运行 `npm run package` 将 EXE 和 `SHA256SUMS` 写入 `artifacts/<版本>/`。项目许可证和第三方声明继续保留在仓库及 EXE 内。

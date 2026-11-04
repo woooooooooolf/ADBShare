@@ -83,7 +83,6 @@ jobs:
           name: windows-x64-release
           path: |
             release/ADBShare-*.exe
-            release/ADBShare-*.zip
             release/SHA256SUMS
             release/release-notes.md
           if-no-files-found: error
@@ -108,5 +107,5 @@ jobs:
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          gh release create "$RELEASE_TAG" release/ADBShare-*.exe release/ADBShare-*.zip release/SHA256SUMS \
+          gh release create "$RELEASE_TAG" release/ADBShare-*.exe release/SHA256SUMS \
             --verify-tag --title "ADBShare $RELEASE_TAG" --notes-file release/release-notes.md

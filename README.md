@@ -13,7 +13,7 @@
 
 ## 下载与使用
 
-从 [Releases](https://github.com/woooooooooolf/ADBShare/releases) 下载独立 EXE 或便携 ZIP。运行需要 **Windows x64、WebView2 Runtime 和 Android Platform Tools**；本项目不内置 adb。
+从 [Releases](https://github.com/woooooooooolf/ADBShare/releases) 下载独立 EXE，并通过 `SHA256SUMS` 校验。运行需要 **Windows x64、WebView2 Runtime 和 Android Platform Tools**；本项目不内置 adb。
 
 1. 用本机 ADB 连接设备，并在设备上允许 USB 调试。必要时在“本机 ADB 设置”中启动 Server。
 2. 新建共享组，选择设备、局域网网卡、空闲端口和允许的来源地址。
@@ -45,7 +45,7 @@ npm run build:app
 npm run package
 ```
 
-交付文件位于 `artifacts/<版本>/`。运行 `scripts/demo.ps1` 可启动隔离的虚拟设备演示；更多检查见 [验证记录](docs/validation.md)。
+后续发布仅提供 EXE 和 `SHA256SUMS`，源码可使用 GitHub 在 Release 页自动提供的归档。交付文件位于 `artifacts/<版本>/`。运行 `scripts/demo.ps1` 可启动隔离的虚拟设备演示；更多检查见 [验证记录](docs/validation.md)。
 
 ## 版本与发布
 
