@@ -212,15 +212,28 @@ async fn handle(
     logs: &Logs,
 ) -> Result<()> {
     client.set_nodelay(true)?;
+    let request = adb::read_frame(client).await?;
     let mut group = group.clone();
     group
         .members
         .retain(|s| access.lock().unwrap().contains_key(s));
     let group = &group;
-    let request = adb::read_frame(client).await?;
-    logs.lock()
-        .unwrap()
-        .event(Some(&group.id), None, Some(id), "request", request.clone());
+    // Device requests are recorded only after resolving their device scope, so
+    // removing a member also removes requests that contain its serial or transport id.
+    if matches!(
+        request.as_str(),
+        "host:devices"
+            | "host:devices-l"
+            | "host:track-devices"
+            | "host:track-devices-l"
+            | "host:version"
+            | "host:host-features"
+            | "host:features"
+    ) {
+        logs.lock()
+            .unwrap()
+            .event(Some(&group.id), None, Some(id), "request", request.clone());
+    }
     if matches!(request.as_str(), "host:devices" | "host:devices-l") {
         let payload = adb::query(upstream, &request).await?;
         let members = access.lock().unwrap().keys().cloned().collect::<Vec<_>>();

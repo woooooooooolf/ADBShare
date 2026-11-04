@@ -232,14 +232,18 @@ async fn device_disable_revokes_only_its_streams_and_history_captures_binary_bot
     a.read_exact(&mut bytes).await.unwrap();
     assert_eq!(&bytes, b"back");
     r.stop().await;
+    let mut remaining = g.clone();
+    remaining.members.retain(|s| s != "A");
+    logs.lock().unwrap().configure(&[remaining]);
     assert!(logs
         .lock()
         .unwrap()
-        .view(Some(&g.id), Some("A"))
+        .view(None, None)
         .records
         .iter()
-        .any(|r| r.kind == "sharing-disabled"));
+        .all(|r| r.serial.as_deref() != Some("A") && !r.message.contains("transport:A")));
 }
+
 #[tokio::test]
 async fn stopping_one_group_leaves_another_and_local_upstream_usable() {
     let lab = lab().await;
