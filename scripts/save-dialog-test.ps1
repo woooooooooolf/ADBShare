@@ -39,8 +39,14 @@ while ([DateTime]::UtcNow -lt $until) {
             [System.Windows.Forms.SendKeys]::SendWait('%n')
             [System.Windows.Forms.SendKeys]::SendWait('^a')
             [System.Windows.Forms.SendKeys]::SendWait($Destination)
-            [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
-            exit 0
+            # Explicit Save avoids Enter merely accepting a filename completion.
+            [System.Windows.Forms.SendKeys]::SendWait('%s')
+            $savedUntil = [DateTime]::UtcNow.AddSeconds(8)
+            while ([DateTime]::UtcNow -lt $savedUntil) {
+                if (Test-Path -LiteralPath $Destination) { exit 0 }
+                Start-Sleep -Milliseconds 100
+            }
+            throw 'Test export did not create the selected file'
         }
     }
     Start-Sleep -Milliseconds 200

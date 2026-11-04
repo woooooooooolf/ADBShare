@@ -28,7 +28,9 @@ let connected = false;
 let refreshing = false;
 let info: AppInfo | null = null;
 let aboutTab: 'overview' | 'project' | 'thirdParty' = 'overview';
-let components: string[] = [];
+type ThirdPartyComponent = { name: string; version: string; license: string };
+let components: ThirdPartyComponent[] = [];
+let aboutRequest = 0;
 let noticeTimer: ReturnType<typeof setTimeout> | undefined;
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const dialog = (id: string) => $<HTMLDialogElement>(id);
@@ -82,7 +84,7 @@ document.querySelector('#app')!.innerHTML = `
 </dialog>
 <dialog id="settings-dialog"><form id="settings-form"><div class="dialog-heading"><h2 data-i18n="settings"></h2><button type="button" id="close-settings" class="square-button close-button">${icons.close}</button></div><p class="quiet" data-i18n="settingsHint"></p><label><span data-i18n="adbPath"></span><input id="adb-path" data-placeholder="adbPathPlaceholder"></label><label><span data-i18n="upstreamPort"></span><input id="upstream-port" type="number" min="1" max="65535"></label><p class="field-help" data-i18n="settingsPortHint"></p><div class="dialog-actions"><button type="button" id="start-adb" class="secondary" data-i18n="startAdb"></button><button type="submit" class="primary" data-i18n="save"></button></div></form></dialog>
 <dialog id="local-devices-dialog" class="wide-dialog"><div class="dialog-heading"><h2><span data-i18n="localDevices"></span> <span id="local-count" class="count"></span></h2><div class="header-actions"><button id="local-refresh" class="secondary" data-i18n="refresh"></button><button id="close-devices" class="square-button close-button">${icons.close}</button></div></div><div id="local-device-list"></div></dialog>
-<dialog id="about-dialog" class="wide-dialog"><div class="dialog-heading"><h2 data-i18n="about"></h2><button id="close-about" class="square-button close-button">${icons.close}</button></div><div class="about-tabs"><button data-tab="overview" data-i18n="overview"></button><button data-tab="project" data-i18n="projectLicense"></button><button data-tab="thirdParty" data-i18n="thirdParty"></button></div><div id="about-summary"></div><label id="component-picker" hidden><span data-i18n="component"></span><select id="license-component"></select></label><pre id="license-document" hidden tabindex="0" lang="en"></pre></dialog>
+<dialog id="about-dialog" class="wide-dialog"><div class="dialog-heading"><h2 data-i18n="about"></h2><button id="close-about" class="square-button close-button">${icons.close}</button></div><div class="about-tabs"><button data-tab="overview" data-i18n="overview"></button><button data-tab="project" data-i18n="projectLicense"></button><button id="third-party-tab" data-tab="thirdParty" data-i18n="thirdParty"></button></div><div id="about-summary"></div><div id="third-party-components" hidden tabindex="0" role="region" aria-labelledby="third-party-tab"></div><pre id="license-document" hidden tabindex="0" lang="en"></pre></dialog>
 <dialog id="confirm-dialog"><h2 id="confirm-title"></h2><p id="confirm-text"></p><div class="dialog-actions"><button id="confirm-no" class="secondary" data-i18n="cancel"></button><button id="confirm-yes" class="primary" data-i18n="confirm"></button></div></dialog>
 <dialog id="shutdown-dialog"><h2 id="shutdown-title"></h2><p id="shutdown-text"></p><div id="shutdown-actions" class="dialog-actions" hidden><button id="shutdown-back" class="secondary" data-i18n="back"></button><button id="shutdown-retry" class="primary" data-i18n="retryExit"></button></div></dialog>`;
 
@@ -181,7 +183,7 @@ function renderState() {
   $('sessions').innerHTML=sessions.length?sessions.map(s=>`<div class="session"><i class="dot online"></i><div><code>${esc(s.peer)}</code><small>${esc(s.serial==='协商中'?(language==='zh'?'协商中':'Negotiating'):s.serial)} · ${new Date(s.since*1000).toLocaleTimeString(language==='zh'?'zh-CN':'en-US')}</small></div></div>`).join(''):`<div class="small-empty">${t(running?'noConnections':'startForConnections')}</div>`;
 }
 function applyLanguage() {
-  translate(); renderSide(); renderState(); renderDevices(); renderAddressOptions(); renderLocalDevices(); renderAbout(); if(history)renderHistory();
+  translate(); renderSide(); renderState(); renderDevices(); renderAddressOptions(); renderLocalDevices(); renderAbout(); if(components.length)renderComponents(); if(history)renderHistory();
   $('language-toggle').title=t('switchLanguage'); $('language-toggle').setAttribute('aria-label',t('switchLanguage')); $('language-toggle').setAttribute('aria-pressed',String(language==='en'));
   $('theme-toggle').innerHTML=theme==='dark'?icons.sun:icons.moon;
   $('theme-toggle').title=t(theme==='dark'?'lightMode':'darkMode'); $('theme-toggle').setAttribute('aria-label',t(theme==='dark'?'lightMode':'darkMode')); $('theme-toggle').setAttribute('aria-pressed',String(theme==='dark'));
@@ -244,21 +246,27 @@ function renderAbout() {
   const date=new Date(info.buildTimestamp*1000);
   $('about-summary').innerHTML=`<div class="about-brand">${glyph}<strong>${esc(info.name)}</strong></div><dl><dt>${t('version')}</dt><dd>${esc(info.version)}</dd><dt>${t('buildTime')}</dt><dd><time datetime="${date.toISOString()}">${date.toLocaleString(language==='zh'?'zh-CN':'en-US',{timeZoneName:'short'})}</time></dd><dt>${t('author')}</dt><dd>${esc(info.author)}</dd><dt>${t('projectLicense')}</dt><dd>GPLv3 <span class="quiet">(${esc(info.license)})</span></dd><dt>${t('source')}</dt><dd>${t('sourceRepository')}</dd></dl><p class="legal">${t('legal',{author:info.author})}</p><p class="quiet">${t('compliance')}</p>`;
 }
-async function showAboutTab(tab: typeof aboutTab) {
-  aboutTab=tab; $('about-summary').hidden=tab!=='overview'; $('license-document').hidden=tab==='overview';
-  $('component-picker').hidden=tab!=='thirdParty';
-  document.querySelectorAll<HTMLButtonElement>('[data-tab]').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.tab===tab)));
-  if (tab==='thirdParty' && !components.length) {
-    components=await invoke<string[]>('third_party_components');
-    $('license-component').innerHTML=components.map((name,i)=>`<option value="${i}">${esc(name)}</option>`).join('');
-  }
-  if (tab!=='overview') await loadLicense();
+function renderComponents() {
+  $('third-party-components').innerHTML=`<table><thead><tr><th scope="col">${t('component')}</th><th scope="col">${t('version')}</th><th scope="col">${t('componentLicense')}</th></tr></thead><tbody>${components.map(c=>`<tr><td>${esc(c.name)}</td><td>${esc(c.version)}</td><td>${esc(c.license)}</td></tr>`).join('')}</tbody></table>`;
 }
-async function loadLicense() {
-  const tab=aboutTab; const component=Number($<HTMLSelectElement>('license-component').value || 0);
-  $('license-document').textContent='…';
-  try { const text=await invoke<string>('license_document',{kind:tab,component});if(aboutTab===tab && component===Number($<HTMLSelectElement>('license-component').value || 0))$('license-document').textContent=text; }
-  catch(e){$('license-document').textContent=errorText(e);}
+async function showAboutTab(tab: typeof aboutTab) {
+  const request=++aboutRequest;
+  aboutTab=tab; $('about-summary').hidden=tab!=='overview'; $('license-document').hidden=tab!=='project';
+  $('third-party-components').hidden=tab!=='thirdParty';
+  document.querySelectorAll<HTMLButtonElement>('[data-tab]').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.tab===tab)));
+  if(tab==='overview')return;
+  const target=$(tab==='thirdParty'?'third-party-components':'license-document');
+  target.textContent='…';
+  try {
+    if(tab==='thirdParty') {
+      const list=components.length?components:await invoke<ThirdPartyComponent[]>('third_party_components');
+      if(request!==aboutRequest)return;
+      components=list;renderComponents();
+    } else {
+      const text=await invoke<string>('license_document');
+      if(request===aboutRequest)target.textContent=text;
+    }
+  } catch(e) {if(request===aboutRequest)target.textContent=errorText(e);}
 }
 async function mayDiscard() {return !dirty || await confirmAction(t('discardTitle'),t('discardText'));}
 async function selectGroup(id: string) {
@@ -309,7 +317,6 @@ $('theme-toggle').onclick=()=>{preferences({theme:theme==='light'?'dark':'light'
 $('about').onclick=()=>void action(async()=>{info=info || await invoke<AppInfo>('app_info');renderAbout();await showAboutTab('overview');dialog('about-dialog').showModal();});
 $('close-about').onclick=()=>dialog('about-dialog').close();
 document.querySelectorAll<HTMLButtonElement>('[data-tab]').forEach(b=>b.onclick=()=>void showAboutTab(b.dataset.tab as typeof aboutTab));
-$('license-component').onchange=()=>void loadLicense();
 for (const id of ['local-refresh']) $(id).onclick=()=>void action(async()=>{await refreshDevices();await sync();if (!connected) notify(errorText(adbError),true);});
 $('group-name').oninput=()=>{if(draft){draft.name=$<HTMLInputElement>('group-name').value;markDirty();}};
 $('port').oninput=()=>{if(draft){draft.port=Number($<HTMLInputElement>('port').value);markDirty();}};

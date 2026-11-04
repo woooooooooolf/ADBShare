@@ -78,19 +78,58 @@ fn third_party_sections() -> impl Iterator<Item = &'static str> {
         .skip(1)
 }
 #[tauri::command]
-pub fn third_party_components() -> Vec<&'static str> {
+pub fn third_party_components() -> Vec<ThirdPartyComponent> {
     third_party_sections()
-        .filter_map(|section| section.lines().next())
+        .filter_map(|section| {
+            let mut lines = section.lines();
+            let mut heading = lines.next()?.split_whitespace();
+            Some(ThirdPartyComponent {
+                name: heading.next()?,
+                version: heading.next()?,
+                license: lines.next()?.strip_prefix("License: ")?,
+            })
+        })
         .collect()
 }
+#[derive(Serialize)]
+pub struct ThirdPartyComponent {
+    name: &'static str,
+    version: &'static str,
+    license: &'static str,
+}
 #[tauri::command]
-pub fn license_document(kind: String, component: Option<usize>) -> Result<&'static str, String> {
-    match kind.as_str() {
-        "project" => Ok(include_str!("../../LICENSE")),
-        "thirdParty" => third_party_sections()
-            .nth(component.unwrap_or(0))
-            .ok_or_else(|| "Unknown component".into()),
-        _ => Err("Unknown license document".into()),
+pub fn license_document() -> &'static str {
+    include_str!("../../LICENSE")
+}
+
+#[cfg(test)]
+mod license_tests {
+    use super::*;
+
+    #[test]
+    fn component_table_covers_the_embedded_catalog_and_preserves_license_expressions() {
+        let components = third_party_components();
+        let expected: usize = include_str!("../../THIRD_PARTY_NOTICES.txt")
+            .lines()
+            .find_map(|line| line.strip_prefix("Components: "))
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert_eq!(components.len(), expected);
+        assert!(components
+            .iter()
+            .all(|c| !c.name.is_empty() && !c.version.is_empty() && !c.license.is_empty()));
+        let api = components
+            .iter()
+            .find(|c| c.name == "@tauri-apps/api")
+            .unwrap();
+        assert_eq!(api.license, "Apache-2.0 OR MIT");
+        let serialized = serde_json::to_value(&components).unwrap();
+        assert!(serialized
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|c| c.as_object().unwrap().len() == 3));
     }
 }
 

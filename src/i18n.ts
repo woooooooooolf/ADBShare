@@ -36,9 +36,9 @@ const zh = {
   initializingFailed: '初始化失败', configFailed: '配置读取失败',
   exiting: '正在退出', exitPending: '正在停止共享并清理规则…', exitFailed: '退出未完成', exitError: '规则清理未完成。', back: '返回程序', retryExit: '重试退出',
   switchLanguage: '切换到英文', switchTheme: '切换主题', darkMode: '深色主题', lightMode: '浅色主题', about: '关于',
-  overview: '概览', projectLicense: '许可证', thirdParty: '第三方声明', component: '组件', version: '版本', buildTime: '构建时间', author: '作者', source: '源码', sourceRepository: 'https://github.com/woooooooooolf/ADBShare',
+  overview: '概览', projectLicense: '许可证', thirdParty: '第三方声明', component: '组件名', componentLicense: '许可证', version: '版本', buildTime: '构建时间', author: '作者', source: '源码', sourceRepository: 'https://github.com/woooooooooolf/ADBShare',
   legal: 'Copyright © 2026 {author}。按 GPLv3 提供，可依许可证修改与再分发，不附带担保。',
-  compliance: '第三方组件保留各自的许可证。下方可查看原始许可证和版权声明。', originalLicense: '许可证原文',
+  compliance: '第三方组件保留各自的许可证，可在第三方声明中查看组件清单。', originalLicense: '许可证原文',
   operationFailed: '操作失败，请检查设置后重试。', noUpstream: '无法连接本机 ADB，请检查设置或启动 ADB。',
 };
 type Key = keyof typeof zh;
@@ -78,9 +78,9 @@ const en: Record<Key, string> = {
   initializingFailed: 'Initialization failed', configFailed: 'Could not read configuration',
   exiting: 'Exiting', exitPending: 'Stopping sharing and removing firewall rules…', exitFailed: 'Could not exit', exitError: 'Firewall cleanup did not finish.', back: 'Return to app', retryExit: 'Retry exit',
   switchLanguage: 'Switch to Chinese', switchTheme: 'Switch theme', darkMode: 'Dark theme', lightMode: 'Light theme', about: 'About',
-  overview: 'Overview', projectLicense: 'License', thirdParty: 'Third-party notices', component: 'Component', version: 'Version', buildTime: 'Built', author: 'Author', source: 'Source', sourceRepository: 'https://github.com/woooooooooolf/ADBShare',
+  overview: 'Overview', projectLicense: 'License', thirdParty: 'Third-party notices', component: 'Component', componentLicense: 'License', version: 'Version', buildTime: 'Built', author: 'Author', source: 'Source', sourceRepository: 'https://github.com/woooooooooolf/ADBShare',
   legal: 'Copyright © 2026 {author}. Licensed under GPLv3. You may modify and redistribute it under the license, without warranty.',
-  compliance: 'Third-party components retain their own licenses. Original license texts and copyright notices are available below.', originalLicense: 'Original license text',
+  compliance: 'Third-party components retain their own licenses. See the component list in Third-party notices.', originalLicense: 'Original license text',
   operationFailed: 'Operation failed. Check the settings and try again.', noUpstream: 'Cannot reach local ADB. Check the settings or start ADB.',
 };
 const stored = (() => { try { const value=JSON.parse(localStorage.getItem('adbshare.preferences') || '{}');return value && typeof value==='object'?value:{}; } catch { return {}; } })();

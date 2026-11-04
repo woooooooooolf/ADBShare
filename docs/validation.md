@@ -84,3 +84,14 @@
 本轮继续使用隔离虚拟上游、回环共享、专用测试 EXE 和配置。没有连接真实 Android 设备，没有创建或移除真实 Windows 防火墙规则，也没有验证双机 LAN；这些实机边界与上一轮一致。
 
 最终截图：[欢迎页](images/welcome.png)、[共享页](images/sharing.png)、[设备历史](images/history-light-zh.png)。
+
+## 后续发布格式与第三方组件表格
+
+- 后续标签发布仅上传 Windows x64 EXE 和 `SHA256SUMS`。本地脚本在独立输出目录中确认恰好生成这两个文件，且校验内容与 EXE 一致；不再执行便携包或源码包压缩。
+- GitHub 自动提供对应标签的源码归档；已发布的 V0.8.0 附件不变。
+- 关于页第三方声明仅显示“组件名 / 版本 / 许可证”表格，覆盖全部 256 个锁定组件，保留完整 SPDX 表达式。完整第三方声明仍保留在仓库和 EXE 内，项目许可证页仍可查看 GPLv3 原文。
+- TypeScript 检查、Windows Release 构建、25 项 Rust 测试和 Clippy 全目标 `-D warnings` 通过。
+- 实际窗口回归通过：三列内容、中英文表头、项目许可证与组件表格切换、明暗主题及既有设备、共享、日志导出和退出流程；没有 WebView 脚本错误。
+- 原生保存测试改用明确的保存快捷键，并等待文件实际生成，避免回车只接受文件名补全导致偶发超时。
+
+界面截图：[浅色中文组件表格](images/third-party-light-zh.png)、[深色英文组件表格](images/third-party-dark-en.png)。
