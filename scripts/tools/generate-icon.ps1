@@ -1,6 +1,6 @@
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
-$root = Split-Path -Parent $PSScriptRoot
+$root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $dir = Join-Path $root 'src-tauri\icons'
 New-Item -ItemType Directory -Path $dir -Force | Out-Null
 $bitmap = [Drawing.Bitmap]::new(256, 256)

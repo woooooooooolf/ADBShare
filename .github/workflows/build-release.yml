@@ -50,6 +50,8 @@ jobs:
           npm ci
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo fetch --locked --target x86_64-pc-windows-msvc --manifest-path src-tauri/Cargo.toml
+      - name: Check source formatting
+        run: npm run format:check
       - name: Validate version and notices
         env:
           BUILD_REF_TYPE: ${{ github.ref_type }}
