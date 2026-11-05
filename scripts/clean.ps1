@@ -28,7 +28,7 @@ foreach ($relative in $targets) {
     if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw "Refusing to clean a linked directory: $target" }
     if ($relative -eq 'work/tests') {
         foreach ($directory in Get-ChildItem -LiteralPath $target -Force) {
-            if (-not $directory.PSIsContainer -or $directory.Name -notin @('ui', 'integration') -or ($directory.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+            if (-not $directory.PSIsContainer -or $directory.Name -notin @('ui', 'integration', 'linux-ui') -or ($directory.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
                 throw "Refusing to clean unrecognized content: $($directory.FullName)"
             }
             $marker = Join-Path $directory.FullName '.adbshare-test-workspace'
