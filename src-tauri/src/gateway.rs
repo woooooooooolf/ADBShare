@@ -1,4 +1,4 @@
-pub use crate::history::{log, Logs};
+use crate::history::Logs;
 use crate::{
     model::{Group, Network},
     protocol::{self as adb, Result},

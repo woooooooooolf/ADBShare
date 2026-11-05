@@ -1,6 +1,6 @@
 use crate::{
-    app::command,
     model::{Group, Network},
+    platform::command,
 };
 use std::{collections::BTreeSet, path::PathBuf, sync::Arc};
 

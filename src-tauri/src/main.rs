@@ -1,7 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 use adbshare::{
+    about,
     app::{self, App, Inner},
-    firewall, gateway, model,
+    firewall, gateway, history, model,
 };
 use std::{
     collections::HashMap,
@@ -37,10 +38,10 @@ fn main() {
         Ok(c) => (c, None),
         Err(e) => (model::Config::default(), Some(e)),
     };
-    let logs = gateway::Logs::default();
+    let logs = history::Logs::default();
     logs.lock().unwrap().configure(&config.groups);
     if let Some(e) = &error {
-        gateway::log(
+        history::log(
             &logs,
             format!("配置加载失败，请检查 {}：{e}", path.display()),
         );
@@ -71,9 +72,9 @@ fn main() {
             app::firewall,
             app::delete_group,
             app::request_exit,
-            app::app_info,
-            app::license_document,
-            app::third_party_components,
+            about::app_info,
+            about::license_document,
+            about::third_party_components,
             app::history_view,
             app::reset_history,
             app::set_device_enabled,
@@ -132,7 +133,7 @@ async fn headless(path: Option<&String>) -> Result<(), Box<dyn std::error::Error
         path.ok_or("--headless requires config path")?,
     ))?;
     let mut running = vec![];
-    let logs = gateway::Logs::default();
+    let logs = history::Logs::default();
     logs.lock().unwrap().configure(&config.groups);
     for group in config.groups {
         running.push(gateway::start(group, config.upstream_port, logs.clone()).await?);

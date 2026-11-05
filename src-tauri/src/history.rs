@@ -30,7 +30,7 @@ pub struct History {
     records: VecDeque<Record>,
     next: u64,
     dropped: BTreeMap<(Option<String>, Option<String>), u64>,
-    pub states: BTreeMap<String, String>,
+    states: BTreeMap<String, String>,
     members: BTreeMap<String, Vec<String>>,
 }
 #[derive(Serialize)]

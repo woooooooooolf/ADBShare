@@ -68,7 +68,6 @@ pub struct Device {
     pub model: String,
     pub transport_id: String,
     pub kind: String,
-    pub line: String,
 }
 pub fn devices(payload: &str) -> Vec<Device> {
     payload
@@ -96,7 +95,6 @@ pub fn devices(payload: &str) -> Vec<Device> {
                 model: field("model:"),
                 transport_id: field("transport_id:"),
                 kind,
-                line: line.to_string(),
             })
         })
         .collect()

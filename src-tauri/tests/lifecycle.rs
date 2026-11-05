@@ -100,7 +100,7 @@ fn app(dir: &std::path::Path, groups: Vec<Group>, backend: Arc<Fake>) -> App {
     };
     let path = dir.join("config.json");
     model::save(&path, &config).unwrap();
-    let logs = gateway::Logs::default();
+    let logs = adbshare::history::Logs::default();
     logs.lock().unwrap().configure(&config.groups);
     App {
         path,
@@ -117,6 +117,48 @@ fn app(dir: &std::path::Path, groups: Vec<Group>, backend: Arc<Fake>) -> App {
         shutting_down: AtomicBool::new(false),
         shutdown_complete: AtomicBool::new(false),
     }
+}
+#[tokio::test]
+async fn delayed_discovery_does_not_record_devices_from_an_old_upstream_port() {
+    let dir = tempfile::tempdir().unwrap();
+    let g = group();
+    let app = Arc::new(app(dir.path(), vec![g.clone()], Arc::new(Fake::default())));
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    app.inner.lock().await.config.upstream_port = port;
+    let (seen_tx, seen_rx) = tokio::sync::oneshot::channel();
+    let (continue_tx, continue_rx) = tokio::sync::oneshot::channel();
+    let server = tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.unwrap();
+        assert_eq!(
+            protocol::read_frame(&mut socket).await.unwrap(),
+            "host:devices-l"
+        );
+        seen_tx.send(()).unwrap();
+        continue_rx.await.unwrap();
+        protocol::okay_frame(&mut socket, "A device model:Old_Server\n")
+            .await
+            .unwrap();
+    });
+    let query = tokio::spawn({
+        let app = app.clone();
+        async move { app.discover_devices().await }
+    });
+    tokio::time::timeout(Duration::from_secs(2), seen_rx)
+        .await
+        .unwrap()
+        .unwrap();
+    app.inner.lock().await.config.upstream_port = if port == 5037 { 5038 } else { 5037 };
+    continue_tx.send(()).unwrap();
+    assert!(query.await.unwrap().unwrap_err().contains("设置已更改"));
+    assert!(app
+        .logs
+        .lock()
+        .unwrap()
+        .view(Some(&g.id), Some("A"))
+        .records
+        .is_empty());
+    server.await.unwrap();
 }
 #[tokio::test]
 async fn delete_stops_listener_before_cleanup_and_removes_config() {

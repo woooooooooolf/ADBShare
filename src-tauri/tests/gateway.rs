@@ -178,7 +178,7 @@ async fn concurrent_binary_streams_and_stop_revocation() {
 async fn device_disable_revokes_only_its_streams_and_history_captures_binary_both_ways() {
     let lab = lab().await;
     let g = group(&["A", "B"]);
-    let logs = gateway::Logs::default();
+    let logs = adbshare::history::Logs::default();
     let r = gateway::start(g.clone(), lab.port, logs.clone())
         .await
         .unwrap();

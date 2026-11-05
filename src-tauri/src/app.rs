@@ -1,5 +1,6 @@
 use crate::{
-    gateway::{self, Logs, Running, Session},
+    gateway::{self, Running, Session},
+    history::{self, Logs},
     model::{self, Config},
     protocol,
 };
@@ -7,7 +8,6 @@ use serde::Serialize;
 use std::{
     collections::HashMap,
     path::PathBuf,
-    process::Command,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc,
@@ -53,87 +53,21 @@ pub struct Snapshot {
     config_error: Option<String>,
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AppInfo {
-    name: &'static str,
-    version: &'static str,
-    build_timestamp: u64,
-    author: &'static str,
-    license: &'static str,
-}
-#[tauri::command]
-pub fn app_info() -> AppInfo {
-    AppInfo {
-        name: "ADBShare",
-        version: env!("CARGO_PKG_VERSION"),
-        build_timestamp: env!("ADB_SHARE_BUILD_TIMESTAMP").parse().unwrap(),
-        author: env!("CARGO_PKG_AUTHORS"),
-        license: env!("CARGO_PKG_LICENSE"),
-    }
-}
-fn third_party_sections() -> impl Iterator<Item = &'static str> {
-    include_str!("../../THIRD_PARTY_NOTICES.txt")
-        .split("\n============================================================================\n")
-        .skip(1)
-}
-#[tauri::command]
-pub fn third_party_components() -> Vec<ThirdPartyComponent> {
-    third_party_sections()
-        .filter_map(|section| {
-            let mut lines = section.lines();
-            let mut heading = lines.next()?.split_whitespace();
-            Some(ThirdPartyComponent {
-                name: heading.next()?,
-                version: heading.next()?,
-                license: lines.next()?.strip_prefix("License: ")?,
-            })
-        })
-        .collect()
-}
-#[derive(Serialize)]
-pub struct ThirdPartyComponent {
-    name: &'static str,
-    version: &'static str,
-    license: &'static str,
-}
-#[tauri::command]
-pub fn license_document() -> &'static str {
-    include_str!("../../LICENSE")
-}
-
-#[cfg(test)]
-mod license_tests {
-    use super::*;
-
-    #[test]
-    fn component_table_covers_the_embedded_catalog_and_preserves_license_expressions() {
-        let components = third_party_components();
-        let expected: usize = include_str!("../../THIRD_PARTY_NOTICES.txt")
-            .lines()
-            .find_map(|line| line.strip_prefix("Components: "))
-            .unwrap()
-            .parse()
-            .unwrap();
-        assert_eq!(components.len(), expected);
-        assert!(components
-            .iter()
-            .all(|c| !c.name.is_empty() && !c.version.is_empty() && !c.license.is_empty()));
-        let api = components
-            .iter()
-            .find(|c| c.name == "@tauri-apps/api")
-            .unwrap();
-        assert_eq!(api.license, "Apache-2.0 OR MIT");
-        let serialized = serde_json::to_value(&components).unwrap();
-        assert!(serialized
-            .as_array()
-            .unwrap()
-            .iter()
-            .all(|c| c.as_object().unwrap().len() == 3));
-    }
-}
-
 impl App {
+    pub async fn discover_devices(&self) -> Result<Vec<protocol::Device>, String> {
+        let port = self.inner.lock().await.config.upstream_port;
+        let list = protocol::query(port, "host:devices-l")
+            .await
+            .map_err(|e| format!("无法连接本机 ADB Server (127.0.0.1:{port})：{e}"))?;
+        let devices = protocol::devices(&list);
+        let inner = self.inner.lock().await;
+        if inner.config.upstream_port != port {
+            return Err("本机 ADB 设置已更改，请刷新重试".into());
+        }
+        self.logs.lock().unwrap().observe(&devices);
+        Ok(devices)
+    }
+
     pub async fn set_device_enabled(
         &self,
         id: &str,
@@ -317,7 +251,7 @@ pub fn begin_shutdown(handle: tauri::AppHandle) {
                 handle.exit(0);
             }
             Err(error) => {
-                gateway::log(&app.logs, format!("退出清理失败：{error}"));
+                history::log(&app.logs, format!("退出清理失败：{error}"));
                 app.shutting_down.store(false, Ordering::SeqCst);
                 let _ = handle.emit("shutdown-state", serde_json::json!({"error":error}));
             }
@@ -373,15 +307,6 @@ pub fn config_path() -> PathBuf {
         })
         .join("config.json")
 }
-pub fn command(program: &str) -> Command {
-    let mut c = Command::new(program);
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        c.creation_flags(0x08000000);
-    }
-    c
-}
 #[tauri::command]
 pub async fn snapshot(app: State<'_, App>) -> Result<Snapshot, String> {
     let inner = app.inner.lock().await;
@@ -409,13 +334,7 @@ pub async fn snapshot(app: State<'_, App>) -> Result<Snapshot, String> {
 }
 #[tauri::command]
 pub async fn discover(app: State<'_, App>) -> Result<Vec<protocol::Device>, String> {
-    let port = app.inner.lock().await.config.upstream_port;
-    let list = protocol::query(port, "host:devices-l")
-        .await
-        .map_err(|e| format!("无法连接本机 ADB Server (127.0.0.1:{port})：{e}"))?;
-    let devices = protocol::devices(&list);
-    app.logs.lock().unwrap().observe(&devices);
-    Ok(devices)
+    app.discover_devices().await
 }
 #[tauri::command]
 pub async fn save_config(config: Config, app: State<'_, App>) -> Result<(), String> {
@@ -442,7 +361,7 @@ pub async fn save_config(config: Config, app: State<'_, App>) -> Result<(), Stri
     for id in inner.running.keys() {
         let before = inner.config.groups.iter().find(|g| &g.id == id);
         let after = config.groups.iter().find(|g| &g.id == id);
-        if serde_json::to_value(before).unwrap() != serde_json::to_value(after).unwrap() {
+        if before != after {
             return Err("请先停止该组，再修改或删除".into());
         }
     }
@@ -542,16 +461,7 @@ pub async fn set_device_enabled(
 }
 #[tauri::command]
 pub async fn export_history(content: String) -> Result<bool, String> {
-    tokio::task::spawn_blocking(move || {
-        if content.len() > 64*1024*1024 { return Err("Export is too large".into()); }
-        // The dialog chooses the destination; record contents never enter shell code.
-        let script = r#"$ErrorActionPreference='Stop'; [Console]::OutputEncoding=[Text.UTF8Encoding]::new(); Add-Type -AssemblyName System.Windows.Forms; $owner=New-Object Windows.Forms.Form; $owner.TopMost=$true; $d=New-Object Windows.Forms.SaveFileDialog; $d.Filter='Text files (*.txt)|*.txt'; $d.FileName='ADBShare-history.txt'; try { if ($d.ShowDialog($owner) -eq 'OK') { [Console]::Write($d.FileName) } } finally { $d.Dispose(); $owner.Dispose() }"#;
-        let output=command("powershell.exe").args(["-NoProfile","-NonInteractive","-STA","-Command",script]).output().map_err(|e|e.to_string())?;
-        if !output.status.success() { return Err(String::from_utf8_lossy(&output.stderr).into_owned()); }
-        let path=String::from_utf8(output.stdout).map_err(|e|e.to_string())?;
-        let path=path.trim_start_matches('\u{feff}');
-        if path.is_empty() { return Ok(false); }
-        std::fs::write(path,content).map_err(|e|e.to_string())?;
-        Ok(true)
-    }).await.map_err(|e|e.to_string())?
+    tokio::task::spawn_blocking(move || crate::platform::save_history(&content))
+        .await
+        .map_err(|e| e.to_string())?
 }
