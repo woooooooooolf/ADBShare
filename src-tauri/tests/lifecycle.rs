@@ -110,13 +110,62 @@ fn app(dir: &std::path::Path, groups: Vec<Group>, backend: Arc<Fake>) -> App {
         }),
         logs,
         config_error: None,
-        firewall: Arc::new(Firewall {
+        firewall: Some(Arc::new(Firewall {
             ledger: dir.join("firewall-rules.json"),
             backend,
-        }),
+        })),
         shutting_down: AtomicBool::new(false),
         shutdown_complete: AtomicBool::new(false),
     }
+}
+
+#[tokio::test]
+async fn external_firewall_mode_never_touches_rules_or_ledger() {
+    let dir = tempfile::tempdir().unwrap();
+    let backend = Arc::new(Fake::default());
+    backend.fail.store(true, Ordering::SeqCst);
+    let mut g = group();
+    g.port = std::net::TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
+    // 127.0.0.2 is still loopback-routable but not the usual UI default address.
+    g.address = "127.0.0.2".parse().unwrap();
+    let mut app = app(dir.path(), vec![g.clone()], backend.clone());
+    app.firewall = None;
+    let upstream = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    app.inner.lock().await.config.upstream_port = upstream.local_addr().unwrap().port();
+    let server = tokio::spawn(async move {
+        loop {
+            let (mut socket, _) = upstream.accept().await.unwrap();
+            tokio::spawn(async move {
+                let request = protocol::read_frame(&mut socket).await.unwrap();
+                protocol::okay_frame(
+                    &mut socket,
+                    if request == "host:version" {
+                        "0029"
+                    } else {
+                        ""
+                    },
+                )
+                .await
+                .unwrap();
+            });
+        }
+    });
+    app.start_group(&g.id).await.unwrap();
+    assert!(app.update_firewall(&g.id, true).await.is_err());
+    assert!(app.inner.lock().await.running.contains_key(&g.id));
+    app.stop_group(&g.id).await.unwrap();
+    app.start_group(&g.id).await.unwrap();
+    app.delete_group(&g.id).await.unwrap();
+    app.cleanup().await.unwrap();
+    assert!(app.inner.lock().await.config.groups.is_empty());
+    assert!(backend.applied.lock().unwrap().is_empty());
+    assert!(backend.batches.lock().unwrap().is_empty());
+    assert!(!dir.path().join("firewall-rules.json").exists());
+    server.abort();
 }
 #[tokio::test]
 async fn delayed_discovery_does_not_record_devices_from_an_old_upstream_port() {
@@ -188,7 +237,7 @@ async fn delete_stops_listener_before_cleanup_and_removes_config() {
         }
     });
     let app = app(dir.path(), vec![g.clone()], backend.clone());
-    app.firewall.apply(&g).unwrap();
+    app.firewall.as_ref().unwrap().apply(&g).unwrap();
     let r = gateway::start(g.clone(), port, Default::default())
         .await
         .unwrap();
@@ -231,7 +280,7 @@ async fn failed_delete_keeps_group_and_cleanup_record_for_retry() {
     let backend = Arc::new(Fake::default());
     let g = group();
     let app = app(dir.path(), vec![g.clone()], backend.clone());
-    app.firewall.apply(&g).unwrap();
+    app.firewall.as_ref().unwrap().apply(&g).unwrap();
     backend.fail.store(true, Ordering::SeqCst);
     assert!(app
         .delete_group(&g.id)
@@ -240,7 +289,8 @@ async fn failed_delete_keeps_group_and_cleanup_record_for_retry() {
         .contains("共享组已保留"));
     assert_eq!(model::load(&app.path).unwrap().groups[0].id, g.id);
     let ids: BTreeSet<String> =
-        serde_json::from_slice(&std::fs::read(&app.firewall.ledger).unwrap()).unwrap();
+        serde_json::from_slice(&std::fs::read(&app.firewall.as_ref().unwrap().ledger).unwrap())
+            .unwrap();
     assert!(ids.contains(&g.id));
     backend.fail.store(false, Ordering::SeqCst);
     app.delete_group(&g.id).await.unwrap();
@@ -254,7 +304,7 @@ async fn exit_batches_all_rules_including_legacy_orphans_and_keeps_groups() {
     let mut b = group();
     b.port += 1;
     let app = app(dir.path(), vec![a.clone(), b.clone()], backend.clone());
-    app.firewall.apply(&a).unwrap();
+    app.firewall.as_ref().unwrap().apply(&a).unwrap();
     // Legacy/unrecorded rules returned by the backend must also be recovered.
     backend.rules.lock().unwrap().insert(b.id.clone());
     let orphan = uuid::Uuid::new_v4().to_string();
@@ -271,7 +321,7 @@ async fn failed_exit_remains_recoverable_after_restart() {
     let backend = Arc::new(Fake::default());
     let g = group();
     let first = app(dir.path(), vec![g.clone()], backend.clone());
-    first.firewall.apply(&g).unwrap();
+    first.firewall.as_ref().unwrap().apply(&g).unwrap();
     backend.fail.store(true, Ordering::SeqCst);
     assert!(first.cleanup().await.is_err());
     drop(first);
@@ -289,8 +339,8 @@ async fn deleting_one_group_keeps_other_groups_rules_and_configuration() {
     let mut b = group();
     b.port += 1;
     let app = app(dir.path(), vec![a.clone(), b.clone()], backend.clone());
-    app.firewall.apply(&a).unwrap();
-    app.firewall.apply(&b).unwrap();
+    app.firewall.as_ref().unwrap().apply(&a).unwrap();
+    app.firewall.as_ref().unwrap().apply(&b).unwrap();
     app.delete_group(&a.id).await.unwrap();
     assert_eq!(
         *backend.rules.lock().unwrap(),
@@ -339,6 +389,7 @@ fn corrupt_cleanup_records_are_not_overwritten() {
     assert_eq!(std::fs::read(&path).unwrap(), b"broken");
 }
 #[test]
+#[cfg(windows)]
 fn helper_rejects_unvalidated_rule_names_before_running_commands() {
     assert!(
         adbshare::firewall::helper(&["--firewall-helper".into(), "remove".into(), "*".into()])

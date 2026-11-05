@@ -2,21 +2,25 @@
 use adbshare::{
     about,
     app::{self, App, Inner},
-    firewall, gateway, history, model,
+    gateway, history, model, platform,
 };
+#[cfg(windows)]
+use std::sync::Arc;
 use std::{
     collections::HashMap,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
+    sync::atomic::{AtomicBool, Ordering},
 };
 use tauri::Manager;
 
 fn main() {
+    if let Err(error) = platform::check_user() {
+        eprintln!("{error}");
+        std::process::exit(1);
+    }
     let args: Vec<_> = std::env::args().skip(1).collect();
+    #[cfg(windows)]
     if args.first().is_some_and(|a| a == "--firewall-helper") {
-        std::process::exit(if firewall::helper(&args).is_ok() {
+        std::process::exit(if adbshare::firewall::helper(&args).is_ok() {
             0
         } else {
             1
@@ -32,36 +36,21 @@ fn main() {
         }
         return;
     }
-    let path = app::config_path();
-    // Corrupt configuration is surfaced to the user, never silently overwritten.
-    let (config, error) = match model::load(&path) {
-        Ok(c) => (c, None),
-        Err(e) => (model::Config::default(), Some(e)),
-    };
-    let logs = history::Logs::default();
-    logs.lock().unwrap().configure(&config.groups);
-    if let Some(e) = &error {
-        history::log(
-            &logs,
-            format!("配置加载失败，请检查 {}：{e}", path.display()),
-        );
+    let mut builder = tauri::Builder::default();
+    // Explicit data overrides are reserved for isolated tests/development profiles.
+    // They must not focus or terminate a user's normal application instance.
+    if std::env::var_os("ADB_SHARE_DATA_DIR").is_none() {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|handle, _, _| {
+            if let Some(window) = handle.get_webview_window("main") {
+                let _ = window.unminimize();
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }));
     }
-    tauri::Builder::default()
-        .manage(App {
-            firewall: Arc::new(firewall::Firewall {
-                ledger: path.with_file_name("firewall-rules.json"),
-                backend: Arc::new(firewall::Windows),
-            }),
-            shutting_down: AtomicBool::new(false),
-            shutdown_complete: AtomicBool::new(false),
-            path,
-            inner: tokio::sync::Mutex::new(Inner {
-                config,
-                running: HashMap::new(),
-            }),
-            logs,
-            config_error: error,
-        })
+    builder
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .invoke_handler(tauri::generate_handler![
             app::snapshot,
             app::discover,
@@ -81,6 +70,39 @@ fn main() {
             app::export_history
         ])
         .setup(|app| {
+            let path = app::config_path(app.handle())?;
+            // Corrupt configuration is surfaced to the user, never silently overwritten.
+            let (config, error) = match model::load(&path) {
+                Ok(c) => (c, None),
+                Err(e) => (model::Config::default(), Some(e)),
+            };
+            let logs = history::Logs::default();
+            logs.lock().unwrap().configure(&config.groups);
+            if let Some(e) = &error {
+                history::log(
+                    &logs,
+                    format!("配置加载失败，请检查 {}：{e}", path.display()),
+                );
+            }
+            #[cfg(windows)]
+            let firewall = Some(Arc::new(adbshare::firewall::Firewall {
+                ledger: path.with_file_name("firewall-rules.json"),
+                backend: Arc::new(adbshare::firewall::Windows),
+            }));
+            #[cfg(not(windows))]
+            let firewall = None;
+            app.manage(App {
+                firewall,
+                shutting_down: AtomicBool::new(false),
+                shutdown_complete: AtomicBool::new(false),
+                path,
+                inner: tokio::sync::Mutex::new(Inner {
+                    config,
+                    running: HashMap::new(),
+                }),
+                logs,
+                config_error: error,
+            });
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 loop {

@@ -2,6 +2,8 @@ import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { checkVersion, root } from './version.mjs';
 checkVersion();
+if (process.arch !== 'x64' || !['win32', 'linux'].includes(process.platform))
+  throw Error('Supported build hosts: Windows x64 and Linux x64');
 await import('./notices.mjs');
 const result = spawnSync(
   process.execPath,
@@ -9,7 +11,7 @@ const result = spawnSync(
     path.join(root, 'node_modules/@tauri-apps/cli/tauri.js'),
     'build',
     '--ci',
-    '--no-bundle',
+    ...(process.platform === 'linux' ? ['--bundles', 'appimage'] : ['--no-bundle']),
     '--',
     '--locked',
   ],

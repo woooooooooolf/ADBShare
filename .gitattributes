@@ -2,3 +2,6 @@
 *.exe binary
 *.png binary
 *.ico binary
+# Preserve original upstream license formatting in the generated catalog.
+THIRD_PARTY_NOTICES.txt -whitespace
+licenses/supplements/*.txt -whitespace

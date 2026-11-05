@@ -7,7 +7,8 @@ export { root };
 
 /** Only replace directories explicitly owned by the synthetic test harness. */
 export async function prepareWorkspace(name) {
-  if (!['ui', 'integration'].includes(name)) throw Error(`Unknown test workspace: ${name}`);
+  if (!['ui', 'integration', 'linux-ui'].includes(name))
+    throw Error(`Unknown test workspace: ${name}`);
   const base = path.join(root, 'work/tests');
   const directory = path.resolve(base, name);
   if (path.dirname(directory) !== base) throw Error('Unsafe test workspace path');

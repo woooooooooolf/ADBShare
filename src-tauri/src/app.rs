@@ -21,7 +21,7 @@ pub struct App {
     pub inner: Mutex<Inner>,
     pub logs: Logs,
     pub config_error: Option<String>,
-    pub firewall: Arc<crate::firewall::Firewall>,
+    pub firewall: Option<Arc<crate::firewall::Firewall>>,
     pub shutting_down: AtomicBool,
     pub shutdown_complete: AtomicBool,
 }
@@ -51,6 +51,7 @@ pub struct Snapshot {
     interfaces: Vec<Interface>,
     config_path: String,
     config_error: Option<String>,
+    automatic_firewall: bool,
 }
 
 impl App {
@@ -127,8 +128,11 @@ impl App {
         if group.members.is_empty() {
             return Err("请先选择至少一台设备".into());
         }
-        if !group.address.is_loopback() {
-            let firewall = self.firewall.clone();
+        if let Some(firewall) = self
+            .firewall
+            .clone()
+            .filter(|_| !group.address.is_loopback())
+        {
             let latest = group.clone();
             tokio::task::spawn_blocking(move || firewall.apply(&latest))
                 .await
@@ -148,6 +152,10 @@ impl App {
         Ok(())
     }
     pub async fn update_firewall(&self, id: &str, remove: bool) -> Result<(), String> {
+        let firewall = self
+            .firewall
+            .clone()
+            .ok_or("此平台的防火墙请在程序外配置")?;
         let mut inner = self.inner.lock().await;
         self.ensure_open()?;
         let group = inner
@@ -165,7 +173,6 @@ impl App {
         } else if group.address.is_loopback() {
             return Err("仅本机模式不需要防火墙规则".into());
         }
-        let firewall = self.firewall.clone();
         let group_id = id.to_owned();
         let id = id.to_owned();
         let result = tokio::task::spawn_blocking(move || {
@@ -195,7 +202,7 @@ impl App {
 
     pub fn ensure_open(&self) -> Result<(), String> {
         if self.shutting_down.load(Ordering::SeqCst) {
-            return Err("正在退出并清理规则，请稍候".into());
+            return Err("正在退出，请稍候".into());
         }
         Ok(())
     }
@@ -211,12 +218,15 @@ impl App {
         if let Some(r) = inner.running.remove(id) {
             r.stop().await;
         }
-        let firewall = self.firewall.clone();
-        let target = id.to_owned();
-        tokio::task::spawn_blocking(move || firewall.remove_group(&target))
-            .await
-            .map_err(|e| e.to_string())?
-            .map_err(|e| format!("共享已停止，但规则清理未完成；共享组已保留，可重试删除。{e}"))?;
+        if let Some(firewall) = self.firewall.clone() {
+            let target = id.to_owned();
+            tokio::task::spawn_blocking(move || firewall.remove_group(&target))
+                .await
+                .map_err(|e| e.to_string())?
+                .map_err(|e| {
+                    format!("共享已停止，但规则清理未完成；共享组已保留，可重试删除。{e}")
+                })?;
+        }
         let mut config = inner.config.clone();
         config.groups.retain(|g| g.id != id);
         model::save(&self.path, &config)?;
@@ -229,11 +239,13 @@ impl App {
         for (_, r) in inner.running.drain() {
             r.stop().await;
         }
-        let groups = inner.config.groups.clone();
-        let firewall = self.firewall.clone();
-        tokio::task::spawn_blocking(move || firewall.cleanup(&groups))
-            .await
-            .map_err(|e| e.to_string())?
+        if let Some(firewall) = self.firewall.clone() {
+            let groups = inner.config.groups.clone();
+            tokio::task::spawn_blocking(move || firewall.cleanup(&groups))
+                .await
+                .map_err(|e| e.to_string())??;
+        }
+        Ok(())
     }
 }
 
@@ -295,17 +307,12 @@ pub fn interfaces() -> Vec<Interface> {
     result.dedup_by(|a, b| a.address == b.address);
     result
 }
-pub fn config_path() -> PathBuf {
-    std::env::var_os("ADB_SHARE_DATA_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            std::env::current_exe()
-                .unwrap()
-                .parent()
-                .unwrap()
-                .join("data")
-        })
-        .join("config.json")
+pub fn config_path(handle: &tauri::AppHandle) -> Result<PathBuf, tauri::Error> {
+    let directory = match std::env::var_os("ADB_SHARE_DATA_DIR") {
+        Some(directory) => PathBuf::from(directory),
+        None => handle.path().app_config_dir()?,
+    };
+    Ok(directory.join("config.json"))
 }
 #[tauri::command]
 pub async fn snapshot(app: State<'_, App>) -> Result<Snapshot, String> {
@@ -330,6 +337,7 @@ pub async fn snapshot(app: State<'_, App>) -> Result<Snapshot, String> {
         interfaces: interfaces(),
         config_path: app.path.display().to_string(),
         config_error: app.config_error.clone(),
+        automatic_firewall: app.firewall.is_some(),
     })
 }
 #[tauri::command]
@@ -353,7 +361,7 @@ pub async fn save_config(config: Config, app: State<'_, App>) -> Result<(), Stri
         .iter()
         .any(|old| !config.groups.iter().any(|new| new.id == old.id))
     {
-        return Err("请使用删除共享组操作，以自动清理规则".into());
+        return Err("请使用删除共享组操作".into());
     }
     if !inner.running.is_empty() && config.upstream_port != inner.config.upstream_port {
         return Err("请先停止全部共享，再修改上游端口".into());
@@ -460,8 +468,27 @@ pub async fn set_device_enabled(
     app.set_device_enabled(&id, &serial, enabled).await
 }
 #[tauri::command]
-pub async fn export_history(content: String) -> Result<bool, String> {
-    tokio::task::spawn_blocking(move || crate::platform::save_history(&content))
-        .await
-        .map_err(|e| e.to_string())?
+pub async fn export_history(handle: tauri::AppHandle, content: String) -> Result<bool, String> {
+    if content.len() > 64 * 1024 * 1024 {
+        return Err("Export is too large".into());
+    }
+    tokio::task::spawn_blocking(move || {
+        use tauri_plugin_dialog::DialogExt;
+        let mut dialog = handle
+            .dialog()
+            .file()
+            .set_file_name("ADBShare-history.txt")
+            .add_filter("Text", &["txt"]);
+        if let Some(window) = handle.get_webview_window("main") {
+            dialog = dialog.set_parent(&window);
+        }
+        let Some(file) = dialog.blocking_save_file() else {
+            return Ok(false);
+        };
+        let path = file.into_path().map_err(|e| e.to_string())?;
+        std::fs::write(path, content).map_err(|e| e.to_string())?;
+        Ok(true)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }

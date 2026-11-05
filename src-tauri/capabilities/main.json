@@ -2,5 +2,5 @@
   "identifier": "main",
   "description": "Local application window only",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": ["core:default", "clipboard-manager:allow-write-text"]
 }

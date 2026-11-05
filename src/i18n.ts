@@ -68,6 +68,10 @@ const zh = {
   firewall: '防火墙 · 专用 / 域网络',
   firewallAdd: '应用规则',
   firewallRemove: '移除规则',
+  externalFirewallHint: '请在系统防火墙中自行放行此 TCP 端口；来源 IP / 网段限制仍由本程序执行。',
+  linuxAdbHint:
+    '请自行安装 ADB 并配置 USB 的 udev 权限。设备未授权时，请在设备上确认 USB 调试授权；不要使用 sudo 启动本程序。',
+  noPermissions: 'USB 权限不足',
   editStopped: '停止共享后可编辑',
   remoteHint: '在远端电脑执行以下命令。',
   connections: '当前连接',
@@ -111,6 +115,7 @@ const zh = {
   discardText: '当前组的修改尚未保存。',
   deleteTitle: '删除共享组？',
   deleteText: '将停止该组共享并清理防火墙规则。',
+  deleteTextManual: '将停止该组共享并删除组配置。',
   copied: '命令已复制',
   groupSaved: '配置已保存',
   sharingStopped: '共享已停止',
@@ -123,6 +128,7 @@ const zh = {
   configFailed: '配置读取失败',
   exiting: '正在退出',
   exitPending: '正在停止共享并清理规则…',
+  exitPendingManual: '正在停止共享…',
   exitFailed: '退出未完成',
   exitError: '规则清理未完成。',
   back: '返回程序',
@@ -216,6 +222,11 @@ const en: Record<Key, string> = {
   firewall: 'Firewall · Private / Domain',
   firewallAdd: 'Apply rules',
   firewallRemove: 'Remove rules',
+  externalFirewallHint:
+    'Allow this TCP port in your system firewall. Source IP / subnet restrictions are still enforced by this app.',
+  linuxAdbHint:
+    'Install ADB and configure USB udev permissions yourself. Confirm USB debugging authorization on the device when requested. Run this app without sudo.',
+  noPermissions: 'USB permission denied',
   editStopped: 'Stop sharing to edit',
   remoteHint: 'Run these commands on the remote computer.',
   connections: 'Connections',
@@ -259,6 +270,7 @@ const en: Record<Key, string> = {
   discardText: 'Changes to this group have not been saved.',
   deleteTitle: 'Delete this group?',
   deleteText: 'Sharing will stop and its firewall rule will be removed.',
+  deleteTextManual: 'Sharing will stop and the group configuration will be deleted.',
   copied: 'Command copied',
   groupSaved: 'Settings saved',
   sharingStopped: 'Sharing stopped',
@@ -271,6 +283,7 @@ const en: Record<Key, string> = {
   configFailed: 'Could not read configuration',
   exiting: 'Exiting',
   exitPending: 'Stopping sharing and removing firewall rules…',
+  exitPendingManual: 'Stopping sharing…',
   exitFailed: 'Could not exit',
   exitError: 'Firewall cleanup did not finish.',
   back: 'Return to app',
@@ -406,6 +419,7 @@ export function stateLabel(state: string) {
         device: t('online'),
         offline: t('offline'),
         unauthorized: t('unauthorized'),
+        'no-permissions': t('noPermissions'),
         absent: t('absent'),
       } as Record<string, string>
     )[state] || state

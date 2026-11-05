@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import { language, t, stateLabel, logText, eventText } from '../i18n';
 import type { Snapshot, HistoryRecord, HistoryView, RunAction, ConfirmAction } from '../types';
 import { $, dialog, esc } from './dom';
@@ -175,7 +176,7 @@ export function createActivity(context: ActivityContext) {
   };
   $('history-copy').onclick = () =>
     void context.run(async () => {
-      await navigator.clipboard.writeText(historyText());
+      await writeText(historyText());
       $('history-feedback').textContent = t('historyCopied');
     });
   $('history-export').onclick = () =>

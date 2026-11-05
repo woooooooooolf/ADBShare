@@ -78,7 +78,7 @@ jobs:
           $env:ADB_SHARE_EXE = Join-Path $PWD 'src-tauri/target/release/adbshare.exe'
           npm run test:integration
       - name: Package release files
-        run: ./scripts/package.ps1 -OutputDirectory release
+        run: npm run package -- --output-directory release
       - name: Upload build
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -89,10 +89,90 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  linux:
+    name: Linux x64 / Ubuntu 22.04
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    env:
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install Linux build and test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
+            librsvg2-dev patchelf libfuse2 webkit2gtk-driver xvfb xauth dbus-x11 adb
+          rustup show active-toolchain
+          rustup component add rustfmt clippy
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/bin/tauri-driver
+            ~/.cargo/.crates.toml
+            ~/.cargo/.crates2.json
+            src-tauri/target
+          key: linux-22.04-x64-driver-2.0.5-${{ hashFiles('rust-toolchain.toml', 'src-tauri/Cargo.lock') }}
+      - name: Install locked dependencies
+        run: |
+          npm ci
+          cargo fetch --locked --manifest-path src-tauri/Cargo.toml
+          if ! command -v tauri-driver >/dev/null; then cargo install tauri-driver --version 2.0.5 --locked; fi
+      - name: Check source, version and notices
+        env:
+          BUILD_REF_TYPE: ${{ github.ref_type }}
+          BUILD_REF_NAME: ${{ github.ref_name }}
+        run: |
+          npm run format:check
+          if [ "$BUILD_REF_TYPE" = tag ]; then node scripts/version.mjs "$BUILD_REF_NAME"; else npm run version:check; fi
+          npm run test:release
+          npm run notices:check
+          cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
+          cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+          npm test
+      - name: Build AppImage on the minimum Ubuntu baseline
+        run: npm run build:app
+      - name: Reject root before desktop and configuration initialization
+        run: |
+          set +e
+          output=$(sudo env -u DISPLAY ADB_SHARE_DATA_DIR="$RUNNER_TEMP/root-denied" src-tauri/target/release/adbshare 2>&1)
+          code=$?
+          set -e
+          test "$code" -eq 1
+          printf '%s\n' "$output" | grep -F 'Please run it without sudo.'
+          test ! -e "$RUNNER_TEMP/root-denied"
+      - name: Test the packaged AppImage with standard adb and native WebKitGTK
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: '1'
+        run: |
+          export ADB_SHARE_EXE="$PWD/src-tauri/target/release/bundle/appimage/ADBShare_$(node -p "require('./package.json').version")_amd64.AppImage"
+          npm run test:integration
+          dbus-run-session -- xvfb-run -a npm run test:linux-ui
+      - name: Package release files
+        run: npm run package -- --output-directory release
+      - name: Upload build
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: linux-x64-release
+          path: |
+            release/ADBShare-*.AppImage
+            release/ADBShare-*.AppImage.sha256
+          if-no-files-found: error
+          retention-days: 7
+
   publish:
     name: Publish tagged release
     if: github.event_name == 'push' && github.ref_type == 'tag'
-    needs: windows
+    needs: [windows, linux]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -108,7 +188,8 @@ jobs:
           package-manager-cache: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: windows-x64-release
+          pattern: '*-x64-release'
+          merge-multiple: true
           path: release
       - name: Publish release
         env:
@@ -118,4 +199,5 @@ jobs:
         run: |
           node scripts/version.mjs --notes > "$RUNNER_TEMP/release-notes.md"
           gh release create "$RELEASE_TAG" release/ADBShare-*.exe release/ADBShare-*.exe.sha256 \
+            release/ADBShare-*.AppImage release/ADBShare-*.AppImage.sha256 \
             --verify-tag --title "ADBShare $RELEASE_TAG" --notes-file "$RUNNER_TEMP/release-notes.md"

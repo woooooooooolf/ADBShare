@@ -24,6 +24,7 @@ export type Snapshot = {
   interfaces: Interface[];
   configPath: string;
   configError: string | null;
+  automaticFirewall: boolean;
 };
 export type AppInfo = {
   name: string;

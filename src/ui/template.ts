@@ -97,11 +97,17 @@ export const appMarkup = /* HTML */ ` <aside>
               </label>
               <p class="field-help" data-i18n="sourceHint"></p>
             </div>
-            <div class="firewall-bar">
+            <div id="firewall-controls" class="firewall-bar" hidden>
               <span data-i18n="firewall"></span
               ><button id="firewall-add" class="secondary" data-i18n="firewallAdd"></button
               ><button id="firewall-remove" class="secondary" data-i18n="firewallRemove"></button>
             </div>
+            <p
+              id="external-firewall-hint"
+              class="field-help"
+              data-i18n="externalFirewallHint"
+              hidden
+            ></p>
           </section>
         </div>
         <div class="details">
@@ -169,6 +175,7 @@ export const appMarkup = /* HTML */ ` <aside>
         </button>
       </div>
       <p class="quiet" data-i18n="settingsHint"></p>
+      <p id="linux-adb-hint" class="field-help" data-i18n="linuxAdbHint" hidden></p>
       <label
         ><span data-i18n="adbPath"></span
         ><input id="adb-path" data-placeholder="adbPathPlaceholder" /></label

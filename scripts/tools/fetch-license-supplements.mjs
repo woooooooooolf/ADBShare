@@ -29,7 +29,7 @@ const names = [
   'webview2-com-sys',
 ];
 await fs.mkdir('licenses/supplements', { recursive: true });
-const records = {};
+const records = JSON.parse(await fs.readFile('licenses/supplements/sources.json', 'utf8'));
 for (const p of metadata.packages.filter((p) => names.includes(p.name))) {
   const vcs = JSON.parse(
     await fs.readFile(path.join(path.dirname(p.manifest_path), '.cargo_vcs_info.json'), 'utf8'),

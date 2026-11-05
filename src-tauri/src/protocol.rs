@@ -75,7 +75,14 @@ pub fn devices(payload: &str) -> Vec<Device> {
         .filter_map(|line| {
             let mut fields = line.split_whitespace();
             let serial = fields.next()?.to_owned();
-            let state = fields.next()?.to_owned();
+            let state = fields.next()?;
+            let state = if state == "no" && fields.clone().next() == Some("permissions") {
+                fields.next();
+                "no-permissions"
+            } else {
+                state
+            }
+            .to_owned();
             let rest: Vec<_> = fields.collect();
             let field = |name: &str| {
                 rest.iter()
@@ -123,5 +130,12 @@ mod tests {
         let d = devices(input);
         assert_eq!(d[0].transport_id, "8");
         assert_eq!(d[2].kind, "local");
+    }
+
+    #[test]
+    fn linux_usb_permission_state_is_not_confused_with_offline_or_authorization() {
+        let list = devices("USB123\tno permissions (user in plugdev group; are your udev rules wrong?)\nUSB456 unauthorized usb:1-2\n");
+        assert_eq!(list[0].state, "no-permissions");
+        assert_eq!(list[1].state, "unauthorized");
     }
 }

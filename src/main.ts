@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import { language, theme, preferences, t, translate, errorText, stateLabel } from './i18n';
 import { icons } from './icons';
 import type { Group, Device, Snapshot } from './types';
@@ -74,6 +75,9 @@ async function action(fn: () => Promise<void>) {
 }
 async function sync() {
   data = await invoke<Snapshot>('snapshot');
+  $('firewall-controls').hidden = !data.automaticFirewall;
+  $('external-firewall-hint').hidden = data.automaticFirewall;
+  $('linux-adb-hint').hidden = data.automaticFirewall;
   renderSide();
   renderState();
   if (activity.isOpen()) await activity.refresh();
@@ -216,7 +220,7 @@ function renderState() {
       (b) =>
         (b.onclick = () =>
           void action(async () => {
-            await navigator.clipboard.writeText(cmd[Number(b.dataset.command)]);
+            await writeText(cmd[Number(b.dataset.command)]);
             notify(t('copied'));
           })),
     );
@@ -431,7 +435,14 @@ $('toggle').onclick = () =>
     renderEditor();
   });
 $('delete-group').onclick = async () => {
-  if (!draft || !(await confirmAction(t('deleteTitle'), t('deleteText')))) return;
+  if (
+    !draft ||
+    !(await confirmAction(
+      t('deleteTitle'),
+      t(data.automaticFirewall ? 'deleteText' : 'deleteTextManual'),
+    ))
+  )
+    return;
   void action(async () => {
     clearNotice();
     try {
@@ -511,7 +522,7 @@ async function boot() {
       $('shutdown-title').textContent = t(payload.error ? 'exitFailed' : 'exiting');
       $('shutdown-text').textContent = payload.error
         ? `${t('exitError')} ${errorText(payload.error)}`
-        : t('exitPending');
+        : t(data?.automaticFirewall ? 'exitPending' : 'exitPendingManual');
       $('shutdown-actions').hidden = !payload.error;
       if (!dialog('shutdown-dialog').open) dialog('shutdown-dialog').showModal();
       if (payload.error) {

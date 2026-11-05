@@ -28,7 +28,10 @@ const config = {
 };
 const file = path.join(work, 'config.json');
 await writeFile(file, JSON.stringify(config));
-const exe = path.resolve(process.env.ADB_SHARE_EXE || 'src-tauri/target/release/adbshare.exe');
+const exe = path.resolve(
+  process.env.ADB_SHARE_EXE ||
+    `src-tauri/target/release/adbshare${process.platform === 'win32' ? '.exe' : ''}`,
+);
 const proc = spawn(exe, ['--headless', file], {
   windowsHide: true,
   stdio: ['ignore', 'pipe', 'pipe'],
