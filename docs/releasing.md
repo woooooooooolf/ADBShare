@@ -65,6 +65,7 @@ git push origin V0.8.1
 - 已发布的 `V0.8.0` 附件保持原样；本格式调整从后续发布开始生效。
 - Windows 原生窗口交互回归在本机执行；两平台 CI 均运行 Rust 测试及标准 adb 与虚拟上游的集成测试。Linux 另用官方 tauri-driver / WebKitGTK / Xvfb 测试实际 AppImage 的界面。
 - Linux 构建固定为 Ubuntu 22.04，使用 `tauri.linux.conf.json` 生成 AppImage。不能直接把更新宿主构建的文件作为最低版本兼容证据。
+- Linux 原生界面检查同时覆盖中文字体可用和仅有拉丁字体两种环境，确认缺字时实际语言与保存值均为英文。Runner 上的字体包只用于测试，不作为程序资源打包。
 
 在对应平台运行 `npm run package`，将程序和同名校验文件写入 `artifacts/<版本>/`。可以使用 `-- --output-directory DIRECTORY` 选择独立目录；目录中含其他文件时拒绝打包，不自动删除。项目许可证和第三方声明继续保留在仓库及程序内。
 

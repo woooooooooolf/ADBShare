@@ -23,6 +23,7 @@ src-tauri/src/
   history.rs              有界内存记录与设备状态变化
   firewall.rs             防火墙规则及失败恢复台账的公共逻辑
   firewall/windows.rs     Windows 规则查询、提权辅助进程及 COM 操作
+  fonts.rs                Linux GTK/Pango 中文字形检测与跨平台 IPC
   platform.rs             Windows 隐藏进程与 Linux 普通用户检查
 scripts/
   build-app.mjs           锁定依赖的应用构建
@@ -47,6 +48,7 @@ docs/                     当前架构、验证与发布说明
 - 刷新设备前后核对上游端口，旧端口的迟到结果不再更新新配置的界面或历史。
 - Windows 防火墙实现通过条件编译隔离；Linux 的 `App.firewall` 为 `None`，不读取台账或调用系统规则。前端根据后端 `automaticFirewall` 能力显示按钮及说明。
 - 配置通过 Tauri Path API 定位；日志保存使用官方 Dialog 的 Rust API，文本复制使用官方 Clipboard Manager，普通启动使用 Single Instance。Linux 有效 UID 为 0 时在应用入口退出。
+- Linux 中文界面就绪检查复用 GTK/Pango；所有 GTK 对象留在主线程。前端在首次显示前确定并保存实际语言，缺字或检测失败时使用英文，不保留原先的中文选择。检测文案来自中文翻译与事件名称，语言按钮始终为 SVG 路径。
 - 完整许可证仍在仓库和程序中；关于页仅展示组件名、版本及许可证表达式。维护工具不会在普通构建中自动更新外部许可证。
 
 ## 生成物与用户数据
