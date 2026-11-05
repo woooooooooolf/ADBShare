@@ -66,6 +66,8 @@ npm run package
 
 `npm run format` 统一源码格式，`npm run clean -- -WhatIf` 预览生成物清理。目录和数据保留约定见 [工程结构](docs/architecture.md)，检查命令及边界见 [验证说明](docs/validation.md)。
 
+问题反馈使用 [Issues](https://github.com/woooooooooolf/ADBShare/issues)，安全问题使用 [私密报告](SECURITY.md)。代码和文档修改通过 PR 与双平台 CI 后合并，具体设置见 [仓库维护](docs/repository.md)。
+
 ## 版本与发布
 
 **V0.9.0** 在 V0.8.0 基线上新增 Linux 支持及界面、配置和字体回退改进，主版本仍为 V0。GitHub Actions 检查主分支，在版本标签上构建并发布 Windows x64 EXE、Linux x64 AppImage 及各自的校验文件。成果物命名与 `Changed` / `Fixed` / `Docs` 简体中文说明规范固定保存在 [发布流程](docs/releasing.md)，修改点见 [更新记录](CHANGELOG.md)。
