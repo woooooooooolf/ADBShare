@@ -6,7 +6,7 @@
 
 1. 同步 `package.json`、`package-lock.json`、`src-tauri/Cargo.toml`、`src-tauri/Cargo.lock` 和 `src-tauri/tauri.conf.json` 的版本号。
 2. 在 `CHANGELOG.md` 增加对应版本条目。
-3. 运行 `npm run version:check`、`npm test` 和 `npm run build:app`。需要原生窗口回归时运行 `npm run test:ui`。
+3. 运行 `npm run format:check`、`npm run version:check`、`npm test` 和 `npm run build:app`。需要原生窗口回归时运行 `npm run test:ui`。
 4. 提交并推送 `main`，等待该提交的 Windows x64 工作流通过。
 5. 确认本地 HEAD、远端 main 和成功工作流的 head SHA 一致，再创建并推送注释标签。
 

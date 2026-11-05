@@ -47,6 +47,14 @@ npm run package
 
 后续发布仅提供 EXE 和 `SHA256SUMS`，源码可使用 GitHub 在 Release 页自动提供的归档。交付文件位于 `artifacts/<版本>/`。运行 `scripts/demo.ps1` 可启动隔离的虚拟设备演示；更多检查见 [验证记录](docs/validation.md)。
 
+## 工程结构与维护
+
+- `src/`：应用入口、共享类型与独立界面模块。
+- `src-tauri/src/`：配置、ADB 网关、内存历史、防火墙和平台实现。
+- `scripts/tests/`：隔离回归；`scripts/tools/`：手工维护工具。
+
+`npm run format` 统一源码格式，`npm run clean -- -WhatIf` 预览生成物清理。目录和数据保留约定见 [工程结构](docs/architecture.md)，检查命令及边界见 [验证说明](docs/validation.md)。
+
 ## 版本与发布
 
 **V0.8.0** 为功能初步就绪基线，后续开发基于此版本迭代。GitHub Actions 检查主分支，并在推送版本标签时自动构建 Windows x64 程序及发布附件。详见 [更新记录](CHANGELOG.md) 和 [发布流程](docs/releasing.md)。
