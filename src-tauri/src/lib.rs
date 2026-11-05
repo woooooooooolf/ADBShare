@@ -1,6 +1,7 @@
 pub mod about;
 pub mod app;
 pub mod firewall;
+pub mod fonts;
 pub mod gateway;
 pub mod history;
 pub mod model;

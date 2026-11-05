@@ -64,6 +64,7 @@ fn main() {
             about::app_info,
             about::license_document,
             about::third_party_components,
+            adbshare::fonts::chinese_font_support,
             app::history_view,
             app::reset_history,
             app::set_device_enabled,

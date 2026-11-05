@@ -151,6 +151,9 @@ const zh = {
   compliance: '第三方组件保留各自的许可证，可在第三方声明中查看组件清单。',
   operationFailed: '操作失败，请检查设置后重试。',
   noUpstream: '无法连接本机 ADB，请检查设置或启动 ADB。',
+  chineseFontMissing:
+    '系统缺少中文界面所需字形，已切换并保存为英文。请安装中文字体（例如 fonts-noto-cjk），重启后再选择中文。用户输入或粘贴的中文仍需系统字体支持。',
+  chineseFontCheckFailed: '无法确认中文字体支持，已切换并保存为英文。请检查字体配置，重启后重试。',
 };
 type Key = keyof typeof zh;
 const en: Record<Key, string> = {
@@ -308,6 +311,10 @@ const en: Record<Key, string> = {
     'Third-party components retain their own licenses. See the component list in Third-party notices.',
   operationFailed: 'Operation failed. Check the settings and try again.',
   noUpstream: 'Cannot reach local ADB. Check the settings or start ADB.',
+  chineseFontMissing:
+    'Chinese interface fonts are missing. English has been selected and saved. Install a Chinese font (e.g. fonts-noto-cjk), restart, then select Chinese again. Chinese input and pasted text still require system fonts.',
+  chineseFontCheckFailed:
+    'Could not verify Chinese font support. English has been selected and saved. Check your font configuration, restart, then try again.',
 };
 const stored = (() => {
   try {
@@ -319,6 +326,18 @@ const stored = (() => {
 })();
 export let language: Language = stored.language === 'en' ? 'en' : 'zh';
 export let theme: Theme = stored.theme === 'dark' ? 'dark' : 'light';
+export function chineseInterfaceText(): string {
+  return [
+    ...new Set(
+      Object.values(zh).join('') +
+        Object.values(eventNames)
+          .map(([zh]) => zh)
+          .join(''),
+    ),
+  ]
+    .filter((character) => !/\s/.test(character))
+    .join('');
+}
 export function t(key: Key, args: Record<string, string | number> = {}): string {
   return Object.entries(args).reduce(
     (s, [k, v]) => s.replaceAll(`{${k}}`, String(v)),
@@ -387,29 +406,29 @@ export function logText(text: string) {
     .replaceAll('配置加载失败，请检查', 'Configuration load failed; check');
 }
 
+const eventNames: Record<string, [string, string]> = {
+  system: ['系统', 'System'],
+  'group-enabled': ['启用组共享', 'Group sharing enabled'],
+  'group-disabled': ['禁用组共享', 'Group sharing disabled'],
+  'sharing-enabled': ['设备共享已启用', 'Device sharing enabled'],
+  'sharing-disabled': ['设备共享已禁用', 'Device sharing disabled'],
+  'device-enabled': ['启用设备', 'Device enabled'],
+  'device-disabled': ['禁用设备', 'Device disabled'],
+  'device-added': ['设备加入组', 'Device added'],
+  'device-state': ['设备连接状态', 'Device connection state'],
+  connect: ['远端连接', 'Remote connected'],
+  disconnect: ['远端断开', 'Remote disconnected'],
+  request: ['ADB 请求', 'ADB request'],
+  service: ['设备服务', 'Device service'],
+  error: ['错误', 'Error'],
+  denied: ['拒绝连接', 'Connection denied'],
+  'rules-applied': ['已应用最新规则', 'Latest rules applied'],
+  'rules-removed': ['规则已移除', 'Rules removed'],
+};
 export function eventText(kind: string) {
-  const names: Record<string, [string, string]> = {
-    system: ['系统', 'System'],
-    'group-enabled': ['启用组共享', 'Group sharing enabled'],
-    'group-disabled': ['禁用组共享', 'Group sharing disabled'],
-    'sharing-enabled': ['设备共享已启用', 'Device sharing enabled'],
-    'sharing-disabled': ['设备共享已禁用', 'Device sharing disabled'],
-    'device-enabled': ['启用设备', 'Device enabled'],
-    'device-disabled': ['禁用设备', 'Device disabled'],
-    'device-added': ['设备加入组', 'Device added'],
-    'device-state': ['设备连接状态', 'Device connection state'],
-    connect: ['远端连接', 'Remote connected'],
-    disconnect: ['远端断开', 'Remote disconnected'],
-    request: ['ADB 请求', 'ADB request'],
-    service: ['设备服务', 'Device service'],
-    error: ['错误', 'Error'],
-    denied: ['拒绝连接', 'Connection denied'],
-    'rules-applied': ['已应用最新规则', 'Latest rules applied'],
-    'rules-removed': ['规则已移除', 'Rules removed'],
-  };
   return kind === 'send' || kind === 'receive'
     ? t(kind)
-    : names[kind]?.[language === 'zh' ? 0 : 1] || kind;
+    : eventNames[kind]?.[language === 'zh' ? 0 : 1] || kind;
 }
 
 export function stateLabel(state: string) {

@@ -325,6 +325,7 @@ try {
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({ path: path.join(directory, 'light-en.png') });
   await page.locator('#language-toggle').click();
+  await expect(page.locator('html')).toHaveAttribute('lang', 'zh-CN');
   await page.reload();
   await expect(page.locator('html')).toHaveAttribute('lang', 'zh-CN');
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');

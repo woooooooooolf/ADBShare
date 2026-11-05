@@ -1,7 +1,17 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
-import { language, theme, preferences, t, translate, errorText, stateLabel } from './i18n';
+import {
+  language,
+  theme,
+  preferences,
+  t,
+  translate,
+  errorText,
+  stateLabel,
+  chineseInterfaceText,
+  type Language,
+} from './i18n';
 import { icons } from './icons';
 import type { Group, Device, Snapshot } from './types';
 import { $, dialog, esc } from './ui/dom';
@@ -371,11 +381,38 @@ $('device-entry').onclick = () => {
   dialog('local-devices-dialog').showModal();
 };
 $('close-devices').onclick = () => dialog('local-devices-dialog').close();
-$('language-toggle').onclick = () => {
-  preferences({ language: language === 'zh' ? 'en' : 'zh' });
-  clearNotice();
-  applyLanguage();
-};
+async function selectLanguage(next: Language) {
+  const button = $<HTMLButtonElement>('language-toggle');
+  button.disabled = true;
+  let warning: 'chineseFontMissing' | 'chineseFontCheckFailed' | undefined;
+  try {
+    if (next === 'zh') {
+      let timeout: ReturnType<typeof setTimeout> | undefined;
+      try {
+        const supported = await Promise.race([
+          invoke<boolean>('chinese_font_support', { text: chineseInterfaceText() }),
+          new Promise<never>((_, reject) => {
+            timeout = setTimeout(() => reject(Error('Font check timed out')), 5000);
+          }),
+        ]);
+        if (!supported) warning = 'chineseFontMissing';
+      } catch (error) {
+        console.warn('Chinese font check failed', error);
+        warning = 'chineseFontCheckFailed';
+      } finally {
+        clearTimeout(timeout);
+      }
+    }
+    preferences({ language: warning ? 'en' : next });
+    clearNotice();
+    applyLanguage();
+    if (warning) notify(t(warning), true);
+  } finally {
+    button.disabled = false;
+  }
+}
+$('language-toggle').onclick = () =>
+  void action(() => selectLanguage(language === 'zh' ? 'en' : 'zh'));
 $('theme-toggle').onclick = () => {
   preferences({ theme: theme === 'light' ? 'dark' : 'light' });
   applyLanguage();
@@ -507,8 +544,15 @@ dialog('shutdown-dialog').oncancel = (e) => e.preventDefault();
 $('shutdown-back').onclick = () => dialog('shutdown-dialog').close();
 $('shutdown-retry').onclick = () =>
   void invoke('request_exit').catch((e) => notify(errorText(e), true));
-applyLanguage();
 async function boot() {
+  try {
+    await selectLanguage(language);
+  } catch (error) {
+    applyLanguage();
+    notify(errorText(error), true);
+  } finally {
+    $('app').hidden = false;
+  }
   try {
     await listen<{ error: string | null }>('shutdown-state', async ({ payload }) => {
       for (const id of [

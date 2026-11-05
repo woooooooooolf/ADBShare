@@ -6,6 +6,7 @@ version = 4
 name = "adbshare"
 version = "0.8.0"
 dependencies = [
+ "gtk",
  "if-addrs",
  "libc",
  "serde",

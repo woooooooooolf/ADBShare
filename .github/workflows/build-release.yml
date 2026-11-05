@@ -45,6 +45,7 @@ jobs:
             ~/.cargo/git
             src-tauri/target
           key: windows-msvc-${{ hashFiles('rust-toolchain.toml', 'src-tauri/Cargo.lock') }}
+          restore-keys: windows-msvc-
       - name: Install locked dependencies
         run: |
           npm ci
@@ -110,7 +111,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
-            librsvg2-dev patchelf libfuse2 webkit2gtk-driver xvfb xauth dbus-x11 adb
+            librsvg2-dev patchelf libfuse2 webkit2gtk-driver xvfb xauth dbus-x11 adb \
+            fonts-dejavu-core fonts-noto-cjk
           rustup show active-toolchain
           rustup component add rustfmt clippy
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -123,6 +125,7 @@ jobs:
             ~/.cargo/.crates2.json
             src-tauri/target
           key: linux-22.04-x64-driver-2.0.5-${{ hashFiles('rust-toolchain.toml', 'src-tauri/Cargo.lock') }}
+          restore-keys: linux-22.04-x64-driver-2.0.5-
       - name: Install locked dependencies
         run: |
           npm ci
@@ -160,6 +163,7 @@ jobs:
           export ADB_SHARE_EXE="$PWD/src-tauri/target/release/bundle/appimage/ADBShare_$(node -p "require('./package.json').version")_amd64.AppImage"
           npm run test:integration
           dbus-run-session -- xvfb-run -a npm run test:linux-ui
+          dbus-run-session -- xvfb-run -a npm run test:linux-ui -- --font-fallback
       - name: Package release files
         run: npm run package -- --output-directory release
       - name: Upload build
