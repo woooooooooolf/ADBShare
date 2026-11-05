@@ -34,6 +34,7 @@ const exe = path.resolve(
 );
 const proc = spawn(exe, ['--headless', file], {
   windowsHide: true,
+  detached: process.platform === 'linux',
   stdio: ['ignore', 'pipe', 'pipe'],
 });
 let output = '';
@@ -115,7 +116,15 @@ try {
   assert(!lab.state.requests.includes('host:kill'));
   console.log('PASS upstream remains usable; no host mutation forwarded');
 } finally {
-  proc.kill();
+  // AppImage extraction launches a child executable. Stop the group owned by
+  // this test so the wrapper cannot leave a shared listener behind.
+  if (process.platform === 'linux' && proc.pid) {
+    try {
+      process.kill(-proc.pid, 'SIGINT');
+    } catch (error) {
+      if (error.code !== 'ESRCH') throw error;
+    }
+  } else proc.kill();
   await exited;
   await lab.close();
 }

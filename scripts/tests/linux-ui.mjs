@@ -44,6 +44,7 @@ const driver = spawn(
       LANG: 'C.UTF-8',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
+    detached: true,
   },
 );
 let diagnostic = '';
@@ -162,7 +163,14 @@ try {
     await ipc('request_exit').catch(() => {});
     await request('DELETE', `/session/${session}`).catch(() => {});
   }
-  driver.kill();
+  // The native driver and extracted AppImage belong to this isolated group.
+  if (driver.pid) {
+    try {
+      process.kill(-driver.pid, 'SIGTERM');
+    } catch (error) {
+      if (error.code !== 'ESRCH') throw error;
+    }
+  }
   await lab.close();
   if (diagnostic) await writeFile(path.join(directory, 'driver.log'), diagnostic);
 }

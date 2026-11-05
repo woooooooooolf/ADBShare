@@ -72,6 +72,7 @@ jobs:
       - name: Build application
         run: npm run build:app
       - name: Test standard adb client
+        timeout-minutes: 5
         run: |
           $env:ADB_PATH = Join-Path $env:ANDROID_HOME 'platform-tools/adb.exe'
           if (-not (Test-Path -LiteralPath $env:ADB_PATH)) { throw 'Android Platform Tools not found' }
@@ -142,6 +143,7 @@ jobs:
       - name: Build AppImage on the minimum Ubuntu baseline
         run: npm run build:app
       - name: Reject root before desktop and configuration initialization
+        timeout-minutes: 1
         run: |
           set +e
           output=$(sudo env -u DISPLAY ADB_SHARE_DATA_DIR="$RUNNER_TEMP/root-denied" src-tauri/target/release/adbshare 2>&1)
@@ -151,6 +153,7 @@ jobs:
           printf '%s\n' "$output" | grep -F 'Please run it without sudo.'
           test ! -e "$RUNNER_TEMP/root-denied"
       - name: Test the packaged AppImage with standard adb and native WebKitGTK
+        timeout-minutes: 5
         env:
           APPIMAGE_EXTRACT_AND_RUN: '1'
         run: |
