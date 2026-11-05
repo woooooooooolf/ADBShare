@@ -13,7 +13,7 @@
 
 ## 下载与使用
 
-从 [Releases](https://github.com/woooooooooolf/ADBShare/releases) 下载程序及同名 `.sha256` 校验文件。已发布的 V0.8.0 为 Windows 版本，Linux AppImage 将随后续版本提供。本项目不内置 adb，运行无需联网。
+从 [Releases](https://github.com/woooooooooolf/ADBShare/releases) 下载程序及同名 `.sha256` 校验文件。V0.9.0 提供 Windows x64 EXE 和 Linux x64 AppImage。本项目不内置 adb，运行无需联网。
 
 | 平台        | 运行条件                                                                                      |
 | ----------- | --------------------------------------------------------------------------------------------- |
@@ -42,7 +42,7 @@ Windows 停止组保留规则，移除规则会先停止组，删除组和退出
 
 ## 开发
 
-基于 Tauri 2、Rust 和 TypeScript。需要 Node.js 24、工程指定的 Rust 工具链、Visual Studio C++ Build Tools 和 WebView2。
+基于 Tauri 2、Rust 和 TypeScript。需要 Node.js 24 和工程指定的 Rust 工具链；Windows 另需 Visual Studio C++ Build Tools 和 WebView2，Linux 构建依赖见 [平台说明](docs/platforms.md)。
 
 ```powershell
 npm ci
@@ -68,7 +68,7 @@ npm run package
 
 ## 版本与发布
 
-**V0.8.0** 为功能初步就绪基线，后续开发基于此版本迭代。GitHub Actions 检查主分支，在版本标签上构建并发布 Windows x64 EXE、Linux x64 AppImage 及各自的校验文件。成果物命名与 `Changed` / `Fixed` / `Docs` 简体中文说明规范固定保存在 [发布流程](docs/releasing.md)，修改点见 [更新记录](CHANGELOG.md)。
+**V0.9.0** 在 V0.8.0 基线上新增 Linux 支持及界面、配置和字体回退改进，主版本仍为 V0。GitHub Actions 检查主分支，在版本标签上构建并发布 Windows x64 EXE、Linux x64 AppImage 及各自的校验文件。成果物命名与 `Changed` / `Fixed` / `Docs` 简体中文说明规范固定保存在 [发布流程](docs/releasing.md)，修改点见 [更新记录](CHANGELOG.md)。
 
 ## 许可证
 
