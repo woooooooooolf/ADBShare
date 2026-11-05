@@ -28,8 +28,10 @@ npm run test:ui
 - Windows 本机：28 项 Rust 测试、Clippy、Release EXE 构建、标准 adb 合成设备集成和完整原生窗口回归通过。日志导出已改用 Tauri Dialog，测试验证选定文件的实际内容。
 - Windows 另行验证默认配置路径位于用户目录，复制 EXE 到其他目录后再次启动会唤起原实例，第二个进程正常退出；此检查不写入默认业务配置。
 - WSL Ubuntu 24.04：27 项 Rust 测试和 Clippy 通过；Windows 专用辅助进程参数测试不在 Linux 编译。root 在无显示环境下打印提示并以状态码 1 退出，没有创建覆盖目录。
+- WSLg 的 X11 会话中，以普通用户运行实际 WebKitGTK 窗口，设备发现、USB 权限状态、外部防火墙提示、共享启停、文本复制、日志和删组回归通过。该精简 WSL 环境缺少中文字体，截图存在缺字，不能据此认定中文视觉验收通过；字体要求见平台说明。
+- WSLg 另行验证默认 XDG 配置路径与重复启动唤起；GTK 原生保存对话框可保存到选定文件，文件内容核对一致。这些是普通用户的原生程序检查，不能替代最低版本 AppImage 的验证。
 - 新增无系统防火墙后端的生命周期回归，覆盖启停、规则请求拒绝、删组和退出不创建台账；测试使用独立虚拟 ADB 上游。新增 Linux `no permissions` 状态解析与 EXE / AppImage 打包约束检查。
-- Ubuntu 22.04 CI：构建 AppImage，检查 root 拒绝启动，使用实际 AppImage 执行标准 adb 合成设备集成和原生 WebKitGTK 界面回归。最终运行结果须以对应提交的 Actions 为准。
+- Ubuntu 22.04 CI：构建 AppImage，检查 root 拒绝启动，使用实际 AppImage 执行标准 adb 合成设备集成和原生 WebKitGTK 界面回归，全部通过。功能提交 `73d149d` 的 [双平台工作流](https://github.com/woooooooooolf/ADBShare/actions/runs/41981048147) 同时通过 Windows x64 和 Linux x64 作业，每平台上传程序及同名校验文件两个成果物。
 - 程序外删除旧内部测试配置 `artifacts/data/` 和 `src-tauri/target/release/data/`；保留 `artifacts/archive/0.1.0/data/` 和用户 WebView 缓存。本轮检查未发现系统中残留的 `ADBShare-*` 防火墙规则。
 
 Linux 界面回归需要普通用户、官方 tauri-driver 2.0.5、WebKitWebDriver、D-Bus 桌面会话和显示服务。CI 使用 Xvfb；本地可在正常桌面中执行：
@@ -40,7 +42,7 @@ npm run test:integration
 dbus-run-session -- xvfb-run -a npm run test:linux-ui
 ```
 
-当前自动化证据不能替代实际 Ubuntu/Kubuntu 桌面（包括 Wayland）、Debian 12、干净系统离线运行、FUSE 挂载和真实 Android USB / 双机局域网测试；Linux 原生保存对话框交互也需实机确认。CI 的解包启动验证只证明该运行方式，不证明所有 FUSE 环境均兼容。
+当前自动化证据不能替代实际 Ubuntu/Kubuntu 桌面（包括 Wayland）、Debian 12、干净系统离线运行、FUSE 挂载和真实 Android USB / 双机局域网测试。CI 的解包启动验证只证明该运行方式，不证明所有 FUSE 环境均兼容。
 
 ## 本轮审核与整理
 

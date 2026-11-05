@@ -59,7 +59,7 @@ docs/                     当前架构、验证与发布说明
 | `work/tests/`                               | 本次合成设备回归                | 带所有权标记，每次测试替换自己的目录                           |
 | `work/demo/`                                | 虚拟设备演示                    | 不接触实际 ADB 或用户配置                                      |
 | `work/tools/`、`work/review/`               | 本地工具及审核清理记录          | 不进入 Git 或发布附件                                          |
-| `artifacts/unreleased/`                     | 当前本地试用 EXE 与校验文件     | 整理后更新，不改用户配置                                       |
+| `artifacts/unreleased/<平台-架构>/`         | 当前本地试用程序与校验文件      | 各平台独立目录，不改用户配置                                   |
 | `artifacts/releases/`、`artifacts/archive/` | 已发布和历史交付文件            | 与当前试用产物分开保存                                         |
 | Tauri 用户配置目录或 `ADB_SHARE_DATA_DIR`   | 程序运行配置及 Windows 规则台账 | 不属于生成缓存，清理命令不处理                                 |
 

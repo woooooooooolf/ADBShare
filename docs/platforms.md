@@ -58,4 +58,6 @@ chmod +x ADBShare-VERSION-linux-x64.AppImage
 
 解包启动需要临时磁盘空间，启动可能更慢。AppImage 不等同于任意发行版上的完全静态程序，也不包含 ADB、USB 权限设置或防火墙配置。离线运行测试应在这些前置条件已满足后进行；首次赋予执行权限、不同桌面会话及实际产物的 FUSE 行为均属于验收范围。
 
+界面使用系统字体。精简系统如果缺少中文字体，中文可能显示为方框；使用中文界面前请准备相应字体（例如发行版的 `fonts-noto-cjk`），也可以切换英文。AppImage 不内置字体或自动下载字体。
+
 开发环境还需要 Node / Rust 和 Tauri 的 Linux 构建依赖；具体命令以工作流为准。参考 [Tauri AppImage](https://v2.tauri.app/distribute/appimage/)、[Tauri 插件](https://v2.tauri.app/plugin/)、[Android Linux 设备设置](https://developer.android.com/studio/run/device#setting-up)。
