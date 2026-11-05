@@ -6,7 +6,7 @@
 
 ```powershell
 npm ci
-cargo fetch --locked --target x86_64-pc-windows-msvc --manifest-path src-tauri/Cargo.toml
+cargo fetch --locked --manifest-path src-tauri/Cargo.toml
 npm run format:check
 npm run check
 npm run test:release
@@ -19,7 +19,28 @@ npm run test:integration
 npm run test:ui
 ```
 
-运行 `npm run package` 只生成 EXE 和同名 `.exe.sha256`，源码使用 GitHub 自动归档。远端流程见 [发布说明](releasing.md)。
+运行 `npm run package` 每平台只生成程序和完整同名 `.sha256`，源码使用 GitHub 自动归档。远端流程见 [发布说明](releasing.md)。
+
+## Linux 首版适配
+
+本轮实现范围及后续约束见 [平台支持](platforms.md)。版本保持 V0.8.0 开发基线，本轮不发布标签。
+
+- Windows 本机：28 项 Rust 测试、Clippy、Release EXE 构建、标准 adb 合成设备集成和完整原生窗口回归通过。日志导出已改用 Tauri Dialog，测试验证选定文件的实际内容。
+- Windows 另行验证默认配置路径位于用户目录，复制 EXE 到其他目录后再次启动会唤起原实例，第二个进程正常退出；此检查不写入默认业务配置。
+- WSL Ubuntu 24.04：27 项 Rust 测试和 Clippy 通过；Windows 专用辅助进程参数测试不在 Linux 编译。root 在无显示环境下打印提示并以状态码 1 退出，没有创建覆盖目录。
+- 新增无系统防火墙后端的生命周期回归，覆盖启停、规则请求拒绝、删组和退出不创建台账；测试使用独立虚拟 ADB 上游。新增 Linux `no permissions` 状态解析与 EXE / AppImage 打包约束检查。
+- Ubuntu 22.04 CI：构建 AppImage，检查 root 拒绝启动，使用实际 AppImage 执行标准 adb 合成设备集成和原生 WebKitGTK 界面回归。最终运行结果须以对应提交的 Actions 为准。
+- 程序外删除旧内部测试配置 `artifacts/data/` 和 `src-tauri/target/release/data/`；保留 `artifacts/archive/0.1.0/data/` 和用户 WebView 缓存。本轮检查未发现系统中残留的 `ADBShare-*` 防火墙规则。
+
+Linux 界面回归需要普通用户、官方 tauri-driver 2.0.5、WebKitWebDriver、D-Bus 桌面会话和显示服务。CI 使用 Xvfb；本地可在正常桌面中执行：
+
+```bash
+export ADB_SHARE_EXE="$PWD/src-tauri/target/release/adbshare"
+npm run test:integration
+dbus-run-session -- xvfb-run -a npm run test:linux-ui
+```
+
+当前自动化证据不能替代实际 Ubuntu/Kubuntu 桌面（包括 Wayland）、Debian 12、干净系统离线运行、FUSE 挂载和真实 Android USB / 双机局域网测试；Linux 原生保存对话框交互也需实机确认。CI 的解包启动验证只证明该运行方式，不证明所有 FUSE 环境均兼容。
 
 ## 本轮审核与整理
 
@@ -49,7 +70,7 @@ npm run test:ui
 
 ## 自动化覆盖
 
-- 26 项 Rust 测试：6 项单元、8 项网关、12 项生命周期。涵盖来源范围、原子配置、设备精确授权、双向二进制、停止撤销、设备禁用、内存历史、规则失败恢复及上游端口切换。
+- 整理基线为 26 项 Rust 测试；本次平台适配后 Windows 为 28 项、Linux 为 27 项。涵盖来源范围、原子配置、设备精确授权、双向二进制、停止撤销、设备禁用、内存历史、规则失败恢复、外部防火墙模式及上游端口切换。
 - 标准 adb 与隔离虚拟上游：设备列表、get-state、shell v2、transport-id、二进制 push/pull 和跨组隔离。
 - 实际 Tauri 窗口：原生窗口缩放至 1600×960、1000×700、760×600、640×480；无横向溢出，标题及操作同排，普通弹窗外部关闭。
 - 本机 ADB 不可用提示及恢复、零设备状态、草稿保留、设备选择、共享启停、规则移除、删组失败重试、日志复制 / 导出 / 重置、中英文 / 明暗主题、关于页及原生退出。

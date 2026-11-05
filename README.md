@@ -7,17 +7,24 @@
 ## 功能
 
 - 多组共享与设备隔离，限制允许接入的来源 IP / 网段。
-- 共享组和单设备独立启停，防火墙规则管理与共享状态联动。
+- 共享组和单设备独立启停；Windows 防火墙规则管理与共享状态联动。
 - 全局、组、设备三级运行日志，支持交互预览、复制、导出和重置。
-- 中英文界面、明暗主题，Windows x64 便携运行。
+- 中英文界面、明暗主题，Windows x64 独立 EXE 与 Linux x64 AppImage。
 
 ## 下载与使用
 
-从 [Releases](https://github.com/woooooooooolf/ADBShare/releases) 下载独立 EXE；后续版本同时提供同名 `.exe.sha256` 校验文件。运行需要 **Windows x64、WebView2 Runtime 和 Android Platform Tools**；本项目不内置 adb。
+从 [Releases](https://github.com/woooooooooolf/ADBShare/releases) 下载程序及同名 `.sha256` 校验文件。已发布的 V0.8.0 为 Windows 版本，Linux AppImage 将随后续版本提供。本项目不内置 adb，运行无需联网。
+
+| 平台        | 运行条件                                                                                      |
+| ----------- | --------------------------------------------------------------------------------------------- |
+| Windows x64 | WebView2 Runtime、Android Platform Tools                                                      |
+| Linux x64   | 目标 Ubuntu/Kubuntu 22.04 起的 LTS、Debian 12 起的桌面环境；本地 ADB 与正确的 USB / udev 权限 |
+
+Linux 下载后赋予 AppImage 执行权限，并以普通用户启动；root / sudo 启动会打印提示并退出。详细边界及验证情况见 [平台支持](docs/platforms.md)。
 
 1. 用本机 ADB 连接设备，并在设备上允许 USB 调试。必要时在“本机 ADB 设置”中启动 Server。
 2. 新建共享组，选择设备、局域网网卡、空闲端口和允许的来源地址。
-3. 点击“保存并共享”，按提示批准防火墙规则配置。
+3. 点击“保存并共享”。Windows 按提示批准防火墙规则配置；Linux 请事先在系统防火墙中放行共享 TCP 端口。
 4. 在获准的远端电脑执行界面中的命令：
 
 ```powershell
@@ -25,7 +32,9 @@ adb -H 192.168.1.10 -P 15037 devices -l
 adb -H 192.168.1.10 -P 15037 -s SERIAL shell
 ```
 
-停止组保留防火墙规则；移除规则会先停止组，删除组和退出程序会清理规则。配置保存在 EXE 同级的 `data/`，重开程序不会自动恢复共享。日志仅保存在本次运行的内存中，交互数据为有上限的预览。
+Windows 停止组保留规则，移除规则会先停止组，删除组和退出程序会清理规则。Linux 不管理系统防火墙，来源地址限制仍由程序执行。
+
+配置存放在用户专属目录，位置可在运行日志窗口查看；移动程序不影响配置。普通启动为单实例，重开程序不会自动恢复共享。日志仅保存在本次运行的内存中，交互数据为有上限的预览。
 
 仅在可信局域网使用。当前不提供账户认证或加密，不支持跨主机 `forward/reverse`，不承诺 IDE 或投屏兼容性。真机、双机 LAN 与实际 UAC 防火墙操作的验证边界见 [验证记录](docs/validation.md)。
 
@@ -35,7 +44,7 @@ adb -H 192.168.1.10 -P 15037 -s SERIAL shell
 
 ```powershell
 npm ci
-cargo fetch --locked --target x86_64-pc-windows-msvc --manifest-path src-tauri/Cargo.toml
+cargo fetch --locked --manifest-path src-tauri/Cargo.toml
 npm run tauri -- dev
 
 # 检查、构建与打包
@@ -57,7 +66,7 @@ npm run package
 
 ## 版本与发布
 
-**V0.8.0** 为功能初步就绪基线，后续开发基于此版本迭代。GitHub Actions 检查主分支，并在推送版本标签时自动构建 Windows x64 程序及发布附件。成果物命名与 `Changed` / `Fixed` / `Docs` 简体中文说明规范固定保存在 [发布流程](docs/releasing.md)，修改点见 [更新记录](CHANGELOG.md)。
+**V0.8.0** 为功能初步就绪基线，后续开发基于此版本迭代。GitHub Actions 检查主分支，在版本标签上构建并发布 Windows x64 EXE、Linux x64 AppImage 及各自的校验文件。成果物命名与 `Changed` / `Fixed` / `Docs` 简体中文说明规范固定保存在 [发布流程](docs/releasing.md)，修改点见 [更新记录](CHANGELOG.md)。
 
 ## 许可证
 

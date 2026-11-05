@@ -13,6 +13,7 @@
 - 每个平台构建只产生并发布程序与其校验文件两个成果物，不手工打包 ZIP 或其他压缩包；源码使用 GitHub 自动归档。
 - 校验内容采用小写 SHA-256、两个空格和程序文件名，末尾保留换行，支持在同一目录用 `sha256sum -c` 校验。
 - 例如：`ADBShare-0.8.1-windows-x64.exe` 和 `ADBShare-0.8.1-windows-x64.exe.sha256`。
+- Linux 使用 `ADBShare-0.8.1-linux-x64.AppImage` 和 `ADBShare-0.8.1-linux-x64.AppImage.sha256`；两平台均不额外打包压缩包。
 
 ### Release 说明
 
@@ -43,7 +44,7 @@
 1. 同步 `package.json`、`package-lock.json`、`src-tauri/Cargo.toml`、`src-tauri/Cargo.lock` 和 `src-tauri/tauri.conf.json` 的版本号。
 2. 在 `CHANGELOG.md` 增加对应版本条目，正文遵循上面的三个小节及简体中文规范。
 3. 运行 `npm run format:check`、`npm run version:check`、`npm run test:release`、`npm test` 和 `npm run build:app`。需要原生窗口回归时运行 `npm run test:ui`。
-4. 提交并推送 `main`，等待该提交的 Windows x64 工作流通过。
+4. 提交并推送 `main`，等待该提交的 Windows x64 与 Linux x64 工作流全部通过。
 5. 确认本地 HEAD、远端 main 和成功工作流的 head SHA 一致，再创建并推送注释标签。
 
 ```powershell
@@ -60,10 +61,11 @@ git push origin V0.8.1
 - 使用固定 Node / Rust 版本、锁定依赖和固定提交 SHA 的官方 Actions。
 - 构建阶段仅有仓库只读权限，不保存 checkout 凭据；只有独立发布任务拥有 `contents: write`。
 - 不需要配置个人令牌、签名密钥或其他仓库 Secrets。
-- 后续 Windows x64 发布仅上传独立 EXE 和同名 `.exe.sha256` 校验文件，不再手工生成便携包或源码包；源码使用 GitHub 自动提供的归档。
+- 后续 Windows x64 发布仅上传独立 EXE 和同名 `.exe.sha256`；Linux x64 使用 AppImage 和同名 `.AppImage.sha256`。发布任务等待两个平台成功，合计四个文件；源码使用 GitHub 自动提供的归档。
 - 已发布的 `V0.8.0` 附件保持原样；本格式调整从后续发布开始生效。
-- 原生窗口交互回归在本机执行；云端运行 Rust 测试及标准 adb 与虚拟上游的集成测试。
+- Windows 原生窗口交互回归在本机执行；两平台 CI 均运行 Rust 测试及标准 adb 与虚拟上游的集成测试。Linux 另用官方 tauri-driver / WebKitGTK / Xvfb 测试实际 AppImage 的界面。
+- Linux 构建固定为 Ubuntu 22.04，使用 `tauri.linux.conf.json` 生成 AppImage。不能直接把更新宿主构建的文件作为最低版本兼容证据。
 
-运行 `npm run package` 将 EXE 和同名 `.exe.sha256` 写入 `artifacts/<版本>/`。项目许可证和第三方声明继续保留在仓库及 EXE 内。
+在对应平台运行 `npm run package`，将程序和同名校验文件写入 `artifacts/<版本>/`。可以使用 `-- --output-directory DIRECTORY` 选择独立目录；目录中含其他文件时拒绝打包，不自动删除。项目许可证和第三方声明继续保留在仓库及程序内。
 
 发布说明在独立发布任务中从同一提交生成，放入 Runner 临时目录；不会混入每个平台的构建成果物。
