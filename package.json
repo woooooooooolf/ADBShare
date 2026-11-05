@@ -20,7 +20,8 @@
     "package": "pwsh -NoProfile -File scripts/package.ps1",
     "format": "prettier --write src \"scripts/**/*.mjs\" package.json tsconfig.json .prettierrc.json .github/workflows/build-release.yml README.md CHANGELOG.md \"docs/*.md\" && cargo fmt --manifest-path src-tauri/Cargo.toml --all",
     "format:check": "prettier --check src \"scripts/**/*.mjs\" package.json tsconfig.json .prettierrc.json .github/workflows/build-release.yml README.md CHANGELOG.md \"docs/*.md\"",
-    "clean": "pwsh -NoProfile -File scripts/clean.ps1"
+    "clean": "pwsh -NoProfile -File scripts/clean.ps1",
+    "test:release": "node --test scripts/tests/release.test.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "2.12.4"

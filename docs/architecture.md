@@ -28,7 +28,7 @@ scripts/
   build-app.mjs           锁定依赖的应用构建
   version.mjs             跨清单版本检查与发布说明
   notices.mjs             从锁定依赖生成 / 核对第三方声明
-  package.ps1             只输出 EXE 与 SHA256SUMS
+  package.ps1             只输出 EXE 与同名 .exe.sha256
   demo.ps1 / clean.ps1    隔离演示与生成物清理
   tests/                  虚拟上游、集成 / 窗口回归及专用原生辅助脚本
   tools/                  手工图标与许可证维护工具

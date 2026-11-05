@@ -13,7 +13,7 @@
 
 ## 下载与使用
 
-从 [Releases](https://github.com/woooooooooolf/ADBShare/releases) 下载独立 EXE，并通过 `SHA256SUMS` 校验。运行需要 **Windows x64、WebView2 Runtime 和 Android Platform Tools**；本项目不内置 adb。
+从 [Releases](https://github.com/woooooooooolf/ADBShare/releases) 下载独立 EXE；后续版本同时提供同名 `.exe.sha256` 校验文件。运行需要 **Windows x64、WebView2 Runtime 和 Android Platform Tools**；本项目不内置 adb。
 
 1. 用本机 ADB 连接设备，并在设备上允许 USB 调试。必要时在“本机 ADB 设置”中启动 Server。
 2. 新建共享组，选择设备、局域网网卡、空闲端口和允许的来源地址。
@@ -45,7 +45,7 @@ npm run build:app
 npm run package
 ```
 
-后续发布仅提供 EXE 和 `SHA256SUMS`，源码可使用 GitHub 在 Release 页自动提供的归档。交付文件位于 `artifacts/<版本>/`。运行 `scripts/demo.ps1` 可启动隔离的虚拟设备演示；更多检查见 [验证记录](docs/validation.md)。
+后续每平台仅提供程序文件和追加 `.sha256` 的同名校验文件，源码可使用 GitHub 在 Release 页自动提供的归档。交付文件位于 `artifacts/<版本>/`。运行 `scripts/demo.ps1` 可启动隔离的虚拟设备演示；更多检查见 [验证记录](docs/validation.md)。
 
 ## 工程结构与维护
 
@@ -57,7 +57,7 @@ npm run package
 
 ## 版本与发布
 
-**V0.8.0** 为功能初步就绪基线，后续开发基于此版本迭代。GitHub Actions 检查主分支，并在推送版本标签时自动构建 Windows x64 程序及发布附件。详见 [更新记录](CHANGELOG.md) 和 [发布流程](docs/releasing.md)。
+**V0.8.0** 为功能初步就绪基线，后续开发基于此版本迭代。GitHub Actions 检查主分支，并在推送版本标签时自动构建 Windows x64 程序及发布附件。成果物命名与 `Changed` / `Fixed` / `Docs` 简体中文说明规范固定保存在 [发布流程](docs/releasing.md)，修改点见 [更新记录](CHANGELOG.md)。
 
 ## 许可证
 

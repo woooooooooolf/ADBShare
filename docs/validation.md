@@ -9,6 +9,7 @@ npm ci
 cargo fetch --locked --target x86_64-pc-windows-msvc --manifest-path src-tauri/Cargo.toml
 npm run format:check
 npm run check
+npm run test:release
 npm run notices:check
 npm test
 cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
@@ -18,7 +19,7 @@ npm run test:integration
 npm run test:ui
 ```
 
-运行 `npm run package` 只生成 EXE 和 `SHA256SUMS`，源码使用 GitHub 自动归档。远端流程见 [发布说明](releasing.md)。
+运行 `npm run package` 只生成 EXE 和同名 `.exe.sha256`，源码使用 GitHub 自动归档。远端流程见 [发布说明](releasing.md)。
 
 ## 本轮审核与整理
 
@@ -38,6 +39,13 @@ npm run test:ui
 | `artifacts/`        |   39.1 MiB | 22.8 MiB |
 
 合计移除约 6.6 GiB 可重建缓存和冗余输出。两份原有运行配置与四个正式发布文件逐项校验未变；清理后保留的独立 Release EXE 再次通过标准 adb 集成。详细本地哈希及目录记录保留在 `work/review/`，不提交个人配置。
+
+## 发布约束检查
+
+- `npm run test:release` 验证正文移除版本主标题，只保留依次排列的 `Changed`、`Fixed`、`Docs` 小标题与无序列表，并拒绝额外段落、缺失 / 重复小节和空列表。
+- 用独立目录验证打包恰好生成 `ADBShare-0.8.0-windows-x64.exe` 与 `ADBShare-0.8.0-windows-x64.exe.sha256`，文件内容与实际 EXE 的 SHA-256 一致。
+- 同目录内已识别的旧单文件 `SHA256SUMS` 可被替换；不符合本程序单文件格式的旧清单会被拒绝且保持原样。
+- 平台构建成果物不包含发布说明文件；说明在独立发布任务的临时目录生成。既有 Release 的说明和附件不追溯修改，后续规范见 [固定发布约束](releasing.md#固定发布约束)。
 
 ## 自动化覆盖
 
