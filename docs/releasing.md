@@ -1,6 +1,6 @@
 # 版本与发布
 
-当前版本为 **V0.9.0**，主版本仍为 V0。仓库保持私有；Release 和 Actions 产物随仓库权限访问。V0.8.0 的历史标签、说明和附件保留原样。
+当前版本为 **V0.9.0**，主版本仍为 V0。仓库与 Release 已公开，正式发布附件可以直接下载。V0.8.0 的历史标签、说明和附件保留原样。仓库权限与协作约定见 [仓库维护](repository.md)。
 
 ## 固定发布约束
 
@@ -41,15 +41,17 @@
 
 ## 本地准备
 
-1. 同步 `package.json`、`package-lock.json`、`src-tauri/Cargo.toml`、`src-tauri/Cargo.lock` 和 `src-tauri/tauri.conf.json` 的版本号。
+1. 从最新 `main` 创建短期分支，再同步 `package.json`、`package-lock.json`、`src-tauri/Cargo.toml`、`src-tauri/Cargo.lock` 和 `src-tauri/tauri.conf.json` 的版本号。
 2. 在 `CHANGELOG.md` 增加对应版本条目，正文遵循上面的三个小节及简体中文规范。
 3. 运行 `npm run format:check`、`npm run version:check`、`npm run test:release`、`npm test` 和 `npm run build:app`。需要原生窗口回归时运行 `npm run test:ui`。
-4. 提交并推送 `main`，等待该提交的 Windows x64 与 Linux x64 工作流全部通过。
-5. 确认本地 HEAD、远端 main 和成功工作流的 head SHA 一致，再创建并推送注释标签。
+4. 推送分支并创建 PR，等待 Windows x64 与 Linux x64 检查通过；保持分支与 `main` 同步，解决未完成的讨论后使用 Squash 合并。不要求第二位维护者审批，不使用管理员绕过。
+5. 更新本地 `main`，等待合并提交的主分支工作流通过。确认本地 HEAD、远端 main 和成功工作流的 head SHA 一致，再创建并推送注释标签。
+
+例如准备 V0.9.1、完成上述检查并合并后：
 
 ```powershell
-git tag -a V0.8.1 -m "ADBShare V0.8.1"
-git push origin V0.8.1
+git tag -a V0.9.1 -m "ADBShare V0.9.1"
+git push origin V0.9.1
 ```
 
 标签支持 `Vx.y.z` / `vx.y.z`，必须与应用版本完全一致。不要移动已经发布的标签。
