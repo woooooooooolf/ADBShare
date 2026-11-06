@@ -26,6 +26,10 @@ tauri-plugin-single-instance = "2"
 libc = "0.2"
 gtk = "0.18"
 
+[patch.crates-io]
+# RUSTSEC-2024-0429: minimal upstream fix, retaining the GTK3-compatible version.
+glib = { path = "../third_party/glib-0.18.5" }
+
 [profile.release]
 opt-level = "s"
 lto = true

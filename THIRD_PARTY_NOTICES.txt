@@ -5,7 +5,7 @@ This catalog covers the locked Windows x64 and Linux x64 Cargo dependency graphs
 (which may inject runtime helpers). Entries are conservative: not every component
 is shipped on every platform. Components retain their original licenses.
 The application is GPL-3.0-only; this does not replace third-party license terms.
-Unmodified upstream source archives are linked per component.
+Source archives are linked per component; local modifications are identified.
 Windows/WebView2 and external Android Platform Tools are not bundled.
 
 Components: 397
@@ -21440,7 +21440,7 @@ SOFTWARE.
 glib 0.18.5 (Cargo)
 License: MIT
 Project: https://github.com/gtk-rs/gtk-rs-core
-Source: https://crates.io/api/v1/crates/glib/0.18.5/download
+Source: https://github.com/woooooooooolf/ADBShare/tree/main/third_party/glib-0.18.5 (modified; provenance and patch: third_party/README.md)
 
 --- COPYRIGHT ---
 The gtk-rs Project is licensed under the MIT license, see the LICENSE file or

@@ -44,7 +44,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             src-tauri/target
-          key: windows-msvc-${{ hashFiles('rust-toolchain.toml', 'src-tauri/Cargo.lock') }}
+          key: windows-msvc-${{ hashFiles('rust-toolchain.toml', 'src-tauri/Cargo.lock', 'third_party/glib-0.18.5.source.json') }}
           restore-keys: windows-msvc-
       - name: Install locked dependencies
         run: |
@@ -63,9 +63,11 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run test:release
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run glib:check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run notices:check
       - name: Check Rust formatting
-        run: cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
+        run: cargo fmt --manifest-path src-tauri/Cargo.toml --package adbshare -- --check
       - name: Lint Rust
         run: cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
       - name: Test gateway and lifecycle
@@ -124,7 +126,7 @@ jobs:
             ~/.cargo/.crates.toml
             ~/.cargo/.crates2.json
             src-tauri/target
-          key: linux-22.04-x64-driver-2.0.5-${{ hashFiles('rust-toolchain.toml', 'src-tauri/Cargo.lock') }}
+          key: linux-22.04-x64-driver-2.0.5-${{ hashFiles('rust-toolchain.toml', 'src-tauri/Cargo.lock', 'third_party/glib-0.18.5.source.json') }}
           restore-keys: linux-22.04-x64-driver-2.0.5-
       - name: Install locked dependencies
         run: |
@@ -139,10 +141,16 @@ jobs:
           npm run format:check
           if [ "$BUILD_REF_TYPE" = tag ]; then node scripts/version.mjs "$BUILD_REF_NAME"; else npm run version:check; fi
           npm run test:release
+          npm run glib:check
           npm run notices:check
-          cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
+          cargo fmt --manifest-path src-tauri/Cargo.toml --package adbshare -- --check
           cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
           npm test
+      - name: Test patched GLib string iterators in Debug and Release
+        run: |
+          npm run build
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --test glib_variant_iter
+          cargo test --locked --release --manifest-path src-tauri/Cargo.toml --test glib_variant_iter
       - name: Build AppImage on the minimum Ubuntu baseline
         run: npm run build:app
       - name: Reject root before desktop and configuration initialization

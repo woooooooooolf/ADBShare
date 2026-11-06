@@ -1,6 +1,6 @@
 # 验证与审核
 
-当前工程维护日期：2026-11-05。Node / Rust 版本由 `.node-version` 与 `rust-toolchain.toml` 固定，依赖使用锁文件。
+当前工程维护日期：2026-11-06。Node / Rust 版本由 `.node-version` 与 `rust-toolchain.toml` 固定，依赖使用锁文件。
 
 ## 检查入口
 
@@ -10,6 +10,7 @@ cargo fetch --locked --manifest-path src-tauri/Cargo.toml
 npm run format:check
 npm run check
 npm run test:release
+npm run glib:check
 npm run notices:check
 npm test
 cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
@@ -20,6 +21,18 @@ npm run test:ui
 ```
 
 运行 `npm run package` 每平台只生成程序和完整同名 `.sha256`，源码使用 GitHub 自动归档。远端流程见 [发布说明](releasing.md)。
+
+## glib 安全补丁
+
+Linux 依赖链保留 GTK3 兼容的 glib 0.18.5，仅回移上游 PR #1343 的两行修复。源码、许可证、原始包校验值和差异见 [第三方源码补丁](../third_party/README.md)。`npm run glib:check` 同时检查整个源码目录、实际 Cargo 解析图和锁文件；不全局忽略漏洞公告。
+
+```bash
+npm run build
+cargo test --locked --manifest-path src-tauri/Cargo.toml --test glib_variant_iter
+cargo test --locked --release --manifest-path src-tauri/Cargo.toml --test glib_variant_iter
+```
+
+上述测试直接使用 `gtk::glib`，检查 `VariantStrIter` 的正向 / 反向 / 双端混用、跳跃、耗尽和字符串内容。Release 使用应用优化配置，不能仅以 Debug 通过作为修复证据。Linux CI 明确执行两种模式，并继续构建实际 AppImage，运行标准 adb 集成、WebKitGTK 窗口及缺字回退回归。Windows CI 也核对补丁、锁文件和许可证，并保持原有构建及集成检查。
 
 ## 中文字体回退
 
