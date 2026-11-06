@@ -5,3 +5,6 @@
 # Preserve original upstream license formatting in the generated catalog.
 THIRD_PARTY_NOTICES.txt -whitespace
 licenses/supplements/*.txt -whitespace
+# Keep the vendored crate byte-for-byte, apart from the documented upstream patch.
+third_party/glib-0.18.5/** -text -whitespace
+third_party/patches/*.patch -text -whitespace

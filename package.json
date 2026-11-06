@@ -18,11 +18,12 @@
     "test:ui": "node scripts/tests/ui-smoke.mjs",
     "version:check": "node scripts/version.mjs",
     "package": "node scripts/package.mjs",
-    "format": "prettier --write src \"scripts/**/*.mjs\" package.json tsconfig.json .prettierrc.json .github/workflows/build-release.yml README.md CHANGELOG.md \"docs/*.md\" && cargo fmt --manifest-path src-tauri/Cargo.toml --all",
-    "format:check": "prettier --check src \"scripts/**/*.mjs\" package.json tsconfig.json .prettierrc.json .github/workflows/build-release.yml README.md CHANGELOG.md \"docs/*.md\"",
+    "format": "prettier --write src \"scripts/**/*.mjs\" package.json tsconfig.json .prettierrc.json .github/workflows/build-release.yml README.md CHANGELOG.md SECURITY.md \"third_party/*.md\" \"third_party/*.json\" \"docs/*.md\" && cargo fmt --manifest-path src-tauri/Cargo.toml --package adbshare",
+    "format:check": "prettier --check src \"scripts/**/*.mjs\" package.json tsconfig.json .prettierrc.json .github/workflows/build-release.yml README.md CHANGELOG.md SECURITY.md \"third_party/*.md\" \"third_party/*.json\" \"docs/*.md\"",
     "clean": "pwsh -NoProfile -File scripts/clean.ps1",
     "test:release": "node --test scripts/tests/release.test.mjs scripts/tests/package.test.mjs",
-    "test:linux-ui": "node scripts/tests/linux-ui.mjs"
+    "test:linux-ui": "node scripts/tests/linux-ui.mjs",
+    "glib:check": "node scripts/check-glib-patch.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "2.12.4",

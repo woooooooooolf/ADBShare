@@ -47,7 +47,10 @@ const components = [...packages.values()]
     version: p.version,
     license: p.license || 'See upstream license file',
     url: p.repository || `https://crates.io/crates/${p.name}/${p.version}`,
-    source: `https://crates.io/api/v1/crates/${p.name}/${p.version}/download`,
+    source:
+      p.name === 'glib' && p.source === null
+        ? 'https://github.com/woooooooooolf/ADBShare/tree/main/third_party/glib-0.18.5 (modified; provenance and patch: third_party/README.md)'
+        : `https://crates.io/api/v1/crates/${p.name}/${p.version}/download`,
     texts: texts(path.dirname(p.manifest_path)),
     ecosystem: 'Cargo',
   }));
@@ -98,7 +101,7 @@ components.sort(
 const missing = components.filter((c) => !c.texts.length);
 if (missing.length)
   throw Error(`Missing original license text: ${missing.map((c) => c.name).join(', ')}`);
-const header = `ADBShare third-party notices\n\nThis catalog covers the locked Windows x64 and Linux x64 Cargo dependency graphs\n(including build tools), production JavaScript dependencies, and Vite\n(which may inject runtime helpers). Entries are conservative: not every component\nis shipped on every platform. Components retain their original licenses.\nThe application is GPL-3.0-only; this does not replace third-party license terms.\nUnmodified upstream source archives are linked per component.\nWindows/WebView2 and external Android Platform Tools are not bundled.\n\nComponents: ${components.length}\n`;
+const header = `ADBShare third-party notices\n\nThis catalog covers the locked Windows x64 and Linux x64 Cargo dependency graphs\n(including build tools), production JavaScript dependencies, and Vite\n(which may inject runtime helpers). Entries are conservative: not every component\nis shipped on every platform. Components retain their original licenses.\nThe application is GPL-3.0-only; this does not replace third-party license terms.\nSource archives are linked per component; local modifications are identified.\nWindows/WebView2 and external Android Platform Tools are not bundled.\n\nComponents: ${components.length}\n`;
 const result =
   header +
   components
