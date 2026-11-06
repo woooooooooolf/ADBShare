@@ -163,7 +163,37 @@ try {
   );
   await expect(page.locator('#adb-status')).toHaveText('本机设备列表');
   await expect(page.locator('#device-count')).toHaveText('3');
-  await expect(page.locator('.utility-bar button')).toHaveCount(3);
+  await expect(page.locator('.utility-bar button')).toHaveCount(4);
+  assert.deepEqual(
+    await page.locator('.utility-bar button').evaluateAll((buttons) => buttons.map((b) => b.id)),
+    ['language-toggle', 'theme-toggle', 'about', 'help'],
+  );
+  const aboutButton = await page.locator('#about').boundingBox();
+  const helpButton = await page.locator('#help').boundingBox();
+  assert(helpButton.x > aboutButton.x && Math.abs(helpButton.width - helpButton.height) < 1);
+  await page.locator('#help').click();
+  await expect(page.locator('#help-dialog')).toBeVisible();
+  await expect(page.locator('#help-guide')).toContainText('开始共享');
+  await expect(page.locator('#help')).toHaveAttribute('aria-expanded', 'true');
+  await page.locator('#help-commands-tab').click();
+  await expect(page.locator('#help-commands')).toContainText('forward / reverse');
+  await expect(page.locator('#help-commands')).toContainText('不支持端口映射');
+  await page.screenshot({ path: path.join(directory, 'help-light-zh.png') });
+  await page.locator('#help-commands-tab').press('ArrowRight');
+  await expect(page.locator('#help-differences-tab')).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('#help-differences')).toContainText('localhost');
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#help-dialog')).toBeHidden();
+  await expect(page.locator('#help')).toHaveAttribute('aria-expanded', 'false');
+  const draftName = await page.locator('#group-name').inputValue();
+  await page.locator('#group-name').focus();
+  await page.keyboard.press('F1');
+  await expect(page.locator('#help-dialog')).toBeVisible();
+  await page.keyboard.press('F1');
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#group-name')).toBeFocused();
+  await expect(page.locator('#group-name')).toHaveValue(draftName);
+  console.log('PASS square help button, support guide, F1, tab keys, Escape and draft focus');
   await expect(page.locator('#group-count')).toHaveText('1');
   await expect(
     page.locator('#refresh, #summary, #draft-label, .group-heading, main .logs'),
@@ -191,8 +221,26 @@ try {
       .locator('.columns')
       .evaluate((el) => getComputedStyle(el).gridTemplateColumns.split(' ').length);
     assert.equal(columns, width > 1050 ? 2 : 1);
-    if (width === 640)
+    if (width === 640) {
       await page.screenshot({ path: path.join(directory, 'responsive-small-zh.png') });
+      await page.keyboard.press('F1');
+      await page.locator('#help-commands-tab').click();
+      const fits = await page.locator('#help-dialog').evaluate((el) => {
+        const r = el.getBoundingClientRect();
+        const body = document.getElementById('help-content');
+        return (
+          r.left >= 0 &&
+          r.right <= innerWidth &&
+          r.top >= 0 &&
+          r.bottom <= innerHeight &&
+          body.scrollWidth <= body.clientWidth + 1 &&
+          body.scrollHeight > body.clientHeight
+        );
+      });
+      assert(fits, 'help dialog must fit the viewport and scroll vertically');
+      await page.screenshot({ path: path.join(directory, 'help-small-zh.png') });
+      await page.keyboard.press('Escape');
+    }
     if (width === 1600)
       await page.screenshot({ path: path.join(directory, 'responsive-wide-zh.png') });
   }
@@ -202,8 +250,12 @@ try {
   const welcomeBox = await page.locator('#welcome').boundingBox();
   assert(welcomeBox.y + welcomeBox.height <= 480);
   await page.locator('#groups .group-item').first().click();
+  await expect(page.locator('#workspace [data-i18n="portMappingUnsupported"]')).toContainText(
+    '不支持 adb forward / reverse',
+  );
   await page.locator('#about').click();
   await expect(page.locator('#about-dialog')).toBeVisible();
+  await expect(page.locator('#about-summary')).toContainText('不支持 adb forward / reverse');
   await assertFits(page);
   await dismissOutside(page, 'about-dialog');
   await page.locator('#language-toggle').click();
@@ -295,11 +347,17 @@ try {
   await dismissOutside(page, 'confirm-dialog');
   await expect(page.locator('#group-name')).toHaveValue('Locale draft');
   await expect(page.locator('#group-count')).toHaveText('1');
-  await page.locator('#sources').fill('8.8.8.8');
+  await page.locator('#sources').fill('203.0.113.10/32');
+  await expect(page.locator('#source-warning')).toBeVisible();
+  await expect(page.locator('#source-warning')).toContainText('non-local addresses');
+  await page.locator('#sources').fill('0.0.0.0/0');
+  await expect(page.locator('#source-warning')).toContainText('allows all IPv4 sources');
+  await page.locator('#sources').fill('203.0.113.999');
   await page.locator('#save').click();
   await expect(page.locator('body')).not.toHaveClass(/busy/);
-  await expect(page.locator('#notice')).toContainText('private IPv4');
+  await expect(page.locator('#notice')).toContainText('valid IPv4');
   await page.locator('#sources').fill('127.0.0.0/8');
+  await expect(page.locator('#source-warning')).toBeHidden();
   await page.locator('#theme-toggle').click();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   assert.equal(
@@ -311,7 +369,21 @@ try {
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({ path: path.join(directory, 'dark-en.png') });
   await page.locator('#about').click();
+  await expect(page.locator('#about-summary')).toContainText(
+    'ADB forward / reverse port mapping is not supported',
+  );
+  await expect(page.locator('#workspace [data-i18n="portMappingUnsupported"]')).toContainText(
+    'ADB forward / reverse port mapping is not supported',
+  );
   await page.screenshot({ path: path.join(directory, 'about-dark-en.png') });
+  await page.keyboard.press('F1');
+  await expect(page.locator('#help-dialog')).toBeVisible();
+  await expect(page.locator('#help-title')).toHaveText('Help');
+  await page.locator('#help-commands-tab').click();
+  await expect(page.locator('#help-commands')).toContainText('Port mapping is not supported');
+  await page.screenshot({ path: path.join(directory, 'help-dark-en.png') });
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#about-dialog')).toBeVisible();
   await page.locator('[data-tab="thirdParty"]').click();
   await expect(page.locator('#third-party-components th')).toHaveText([
     'Component',
@@ -500,15 +572,53 @@ try {
   await page.locator('#address').selectOption('127.0.0.1');
   await name.fill('新建流程');
   await page.locator('[data-serial="SIM-PIXEL"]').check();
-  await page.locator('#sources').fill('8.8.8.8');
+  await page.locator('#sources').fill('203.0.113.999');
   await page.locator('#save').click();
   await expect(page.locator('body')).not.toHaveClass(/busy/);
-  await expect(page.locator('#notice')).toContainText('私有 IPv4');
-  await page.locator('#sources').fill('127.0.0.1');
+  await expect(page.locator('#notice')).toContainText('无效 IPv4');
+  await page.locator('#sources').fill('203.0.113.10/32\n198.51.100.0/24');
+  await expect(page.locator('#source-warning')).toBeVisible();
+  await expect(page.locator('#source-warning')).toContainText('非局域网地址');
   await page.locator('#save').click();
   await expect(page.locator('body')).not.toHaveClass(/busy/);
   await expect(page.locator('#save')).toBeDisabled();
-  console.log('PASS empty state, creation and invalid-source feedback');
+  const publicConfig = JSON.parse(await readFile(file, 'utf8'));
+  assert.deepEqual(publicConfig.groups[0].sources, ['203.0.113.10/32', '198.51.100.0/24']);
+  await page.locator('#toggle').click();
+  await expect(page.locator('#group-state')).toContainText('共享中');
+  await expect(page.locator('#source-warning')).toBeVisible();
+  await page.screenshot({ path: path.join(directory, 'non-local-source-warning-zh.png') });
+  await page.locator('#toggle').click();
+  await expect(page.locator('#group-state')).toBeHidden();
+  await page.reload();
+  await expect(page.locator('#sources')).toHaveValue('203.0.113.10/32\n198.51.100.0/24');
+  await expect(page.locator('#source-warning')).toBeVisible();
+  await page.locator('#language-toggle').click();
+  await expect(page.locator('#source-warning')).toContainText('non-local addresses');
+  await page.screenshot({ path: path.join(directory, 'non-local-source-warning-en.png') });
+  await page.locator('#language-toggle').click();
+  for (const local of [
+    '10.1.2.3',
+    '172.16.0.0/12',
+    '192.168.0.0/16',
+    '127.0.0.1',
+    '169.254.0.0/16',
+  ]) {
+    await page.locator('#sources').fill(local);
+    await expect(page.locator('#source-warning')).toBeHidden();
+  }
+  await page.locator('#sources').fill('10.0.0.1/7');
+  await expect(page.locator('#source-warning')).toBeVisible();
+  await page.locator('#sources').fill('192.168.1.0/24\n203.0.113.10');
+  await expect(page.locator('#source-warning')).toBeVisible();
+  await page.locator('#sources').fill('127.0.0.1');
+  await expect(page.locator('#source-warning')).toBeHidden();
+  await page.locator('#save').click();
+  await expect(page.locator('body')).not.toHaveClass(/busy/);
+  await expect(page.locator('#save')).toBeDisabled();
+  console.log(
+    'PASS public source save/start/reload, localized nonblocking warnings, CIDR coverage and invalid-source rejection',
+  );
   await page.locator('#new-bottom').click();
   await page.locator('#address').selectOption('127.0.0.1');
   await name.fill('另一个共享组');
@@ -541,6 +651,9 @@ try {
   await expect(page.locator('#shutdown-title')).toHaveText('退出未完成');
   assert(!exited, 'Cleanup failure must retain native window');
   await expect(page.locator('#shutdown-text')).toContainText('规则清理未完成');
+  await page.keyboard.press('F1');
+  await expect(page.locator('#help-dialog')).toBeHidden();
+  await expect(page.locator('#shutdown-dialog')).toBeVisible();
   await writeFile(ledger, '[]');
   await page.locator('#shutdown-retry').click();
   for (let i = 0; i < 100 && !exited; i++) await delay(100);

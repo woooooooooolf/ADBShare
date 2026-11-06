@@ -1,3 +1,5 @@
+import { helpContent } from './help-content';
+
 export type Language = 'zh' | 'en';
 export type Theme = 'light' | 'dark';
 const zh = {
@@ -64,7 +66,9 @@ const zh = {
   port: '端口',
   sources: '来源 IP / 网段',
   sourcesPlaceholder: '192.168.1.0/24 或 192.168.1.20',
-  sourceHint: '多个地址用逗号或换行分隔。',
+  sourceHint: '支持任意 IPv4 或 CIDR（前缀 0–32）；多个地址用逗号或换行分隔。',
+  nonLocalSourceWarning:
+    '警告：来源范围包含非局域网地址。当前没有账户认证或加密，请仅允许可信主机，并保护中转链路。建议为中转服务器填写单个 IPv4（/32）；0.0.0.0/0 会允许所有 IPv4 来源。',
   firewall: '防火墙 · 专用 / 域网络',
   firewallAdd: '应用规则',
   firewallRemove: '移除规则',
@@ -74,6 +78,8 @@ const zh = {
   noPermissions: 'USB 权限不足',
   editStopped: '停止共享后可编辑',
   remoteHint: '在远端电脑执行以下命令。',
+  portMappingUnsupported:
+    '不支持 adb forward / reverse 端口映射，包括创建、列表和删除；依赖端口映射的调试或投屏功能无法通过本工具使用。',
   connections: '当前连接',
   logs: '运行日志',
   noLogs: '暂无日志',
@@ -137,6 +143,10 @@ const zh = {
   darkMode: '深色主题',
   lightMode: '浅色主题',
   about: '关于',
+  help: '使用帮助',
+  helpGuide: '使用指南',
+  helpCommands: 'ADB 命令',
+  helpDifferences: '行为与差异',
   overview: '概览',
   projectLicense: '许可证',
   thirdParty: '第三方声明',
@@ -221,7 +231,9 @@ const en: Record<Key, string> = {
   port: 'Port',
   sources: 'Source IP / subnet',
   sourcesPlaceholder: '192.168.1.0/24 or 192.168.1.20',
-  sourceHint: 'Separate addresses with commas or newlines.',
+  sourceHint: 'Any IPv4 address or CIDR (prefix 0–32). Separate entries with commas or newlines.',
+  nonLocalSourceWarning:
+    'Warning: this source range includes non-local addresses. There is no account authentication or encryption. Allow only trusted hosts and protect the relay connection. Prefer a single relay IPv4 (/32); 0.0.0.0/0 allows all IPv4 sources.',
   firewall: 'Firewall · Private / Domain',
   firewallAdd: 'Apply rules',
   firewallRemove: 'Remove rules',
@@ -232,6 +244,8 @@ const en: Record<Key, string> = {
   noPermissions: 'USB permission denied',
   editStopped: 'Stop sharing to edit',
   remoteHint: 'Run these commands on the remote computer.',
+  portMappingUnsupported:
+    'ADB forward / reverse port mapping is not supported, including creating, listing, and removing mappings. Debugging or screen-mirroring features that require port mapping cannot be used through this app.',
   connections: 'Connections',
   logs: 'Activity log',
   noLogs: 'No activity yet',
@@ -295,6 +309,10 @@ const en: Record<Key, string> = {
   darkMode: 'Dark theme',
   lightMode: 'Light theme',
   about: 'About',
+  help: 'Help',
+  helpGuide: 'Getting started',
+  helpCommands: 'ADB commands',
+  helpDifferences: 'Behavior and differences',
   overview: 'Overview',
   projectLicense: 'License',
   thirdParty: 'Third-party notices',
@@ -330,6 +348,7 @@ export function chineseInterfaceText(): string {
   return [
     ...new Set(
       Object.values(zh).join('') +
+        JSON.stringify(helpContent.zh) +
         Object.values(eventNames)
           .map(([zh]) => zh)
           .join(''),
@@ -369,7 +388,8 @@ export function errorText(value: unknown): string {
       'Sharing stopped. Firewall cleanup failed; the group was kept. Retry deletion.',
     ],
     ['防火墙清理记录无法读取', 'The firewall cleanup record could not be read.'],
-    ['私有 IPv4', 'Source addresses must be within private IPv4 ranges.'],
+    ['无效 IPv4', 'Enter a valid IPv4 source address.'],
+    ['无效 CIDR', 'Enter a valid IPv4 CIDR prefix (0–32).'],
     ['无法连接本机 ADB', en.noUpstream],
     ['至少一台设备', 'Select at least one device.'],
     ['请先选择至少一台设备', 'Select at least one device.'],

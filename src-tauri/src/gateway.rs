@@ -22,6 +22,7 @@ use tokio::{
     task::{JoinHandle, JoinSet},
 };
 use tokio_util::sync::CancellationToken;
+mod host;
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -188,17 +189,24 @@ fn named<'a>(request: &str, group: &'a Group) -> Option<(&'a str, String)> {
 fn allowed_command(command: &str) -> bool {
     matches!(
         command,
-        "get-state" | "get-serialno" | "get-devpath" | "features"
-    ) || ["wait-for-any-", "wait-for-usb-", "wait-for-local-"]
+        "get-state" | "get-serialno" | "get-devpath" | "features" | "reconnect"
+    ) || host::wait_spec(command).is_some()
+}
+
+fn port_mapping_error(request: &str) -> Option<&'static str> {
+    const MESSAGE: &str =
+        "ADBShare does not support port mapping (adb forward/reverse: create, list, or remove)";
+    if request.starts_with("reverse:") {
+        return Some(MESSAGE);
+    }
+    let command = ["host:", "host-usb:", "host-local:"]
         .iter()
-        .any(|p| {
-            command.strip_prefix(p).is_some_and(|s| {
-                matches!(
-                    s,
-                    "device" | "recovery" | "rescue" | "sideload" | "disconnect"
-                )
-            })
-        })
+        .find_map(|prefix| request.strip_prefix(prefix))
+        .unwrap_or(request);
+    (matches!(command, "list-forward" | "killforward-all")
+        || command.starts_with("forward:")
+        || command.starts_with("killforward:"))
+    .then_some(MESSAGE)
 }
 #[allow(clippy::too_many_arguments)]
 async fn handle(
@@ -213,11 +221,6 @@ async fn handle(
 ) -> Result<()> {
     client.set_nodelay(true)?;
     let request = adb::read_frame(client).await?;
-    let mut group = group.clone();
-    group
-        .members
-        .retain(|s| access.lock().unwrap().contains_key(s));
-    let group = &group;
     // Device requests are recorded only after resolving their device scope, so
     // removing a member also removes requests that contain its serial or transport id.
     if matches!(
@@ -226,13 +229,29 @@ async fn handle(
             | "host:devices-l"
             | "host:track-devices"
             | "host:track-devices-l"
+            | "host:track-devices-proto-text"
+            | "host:track-devices-proto-binary"
             | "host:version"
             | "host:host-features"
-            | "host:features"
+            | "host:server-status"
+            | "host:mdns:check"
     ) {
         logs.lock()
             .unwrap()
             .event(Some(&group.id), None, Some(id), "request", request.clone());
+    }
+    if matches!(
+        request.as_str(),
+        "host:track-devices-proto-text" | "host:track-devices-proto-binary"
+    ) {
+        return host::track_proto(
+            client,
+            upstream,
+            request.ends_with("-text"),
+            access,
+            inventory,
+        )
+        .await;
     }
     if matches!(request.as_str(), "host:devices" | "host:devices-l") {
         let payload = adb::query(upstream, &request).await?;
@@ -267,29 +286,53 @@ async fn handle(
     }
     if matches!(
         request.as_str(),
-        "host:version" | "host:host-features" | "host:features"
+        "host:version" | "host:host-features" | "host:server-status" | "host:mdns:check"
     ) {
-        let result = adb::query(upstream, &request).await?;
-        let result = if request == "host:version" {
-            result
-        } else {
-            result
-                .split(',')
-                .filter(|f| !f.contains("proto"))
-                .collect::<Vec<_>>()
-                .join(",")
-        };
-        return adb::okay_frame(client, &result).await;
+        let mut server = adb::connect(upstream).await?;
+        adb::frame(&mut server, &request).await?;
+        adb::read_status(&mut server).await?;
+        let result = adb::read_frame_bytes(&mut server).await?;
+        client.write_all(b"OKAY").await?;
+        return adb::frame_bytes(client, &result).await;
     }
-    if let Some((serial, command)) = named(&request, group) {
+    if let Some((selector, command)) = host::device_request(&request, group) {
         if !allowed_command(&command) {
-            return Err("host command denied by ADBShare".into());
+            return Err(port_mapping_error(&command)
+                .unwrap_or("host command denied by ADBShare")
+                .into());
         }
-        let token = select_device(access, sessions, logs, group, serial, id, &request)?;
+        if let Some(spec) = host::wait_spec(&command) {
+            let token = match &selector {
+                host::Selector::Kind(_) => {
+                    logs.lock().unwrap().event(
+                        Some(&group.id),
+                        None,
+                        Some(id),
+                        "request",
+                        request.clone(),
+                    );
+                    None
+                }
+                _ => {
+                    let serial = host::resolve_current(upstream, &selector, access).await?;
+                    Some(select_device(
+                        access, sessions, logs, group, &serial, id, &request,
+                    )?)
+                }
+            };
+            let wait = host::wait(client, upstream, &selector, &spec, access, inventory);
+            return if let Some(token) = token {
+                tokio::select! { _=token.cancelled()=>Ok(()), result=wait=>result }
+            } else {
+                wait.await
+            };
+        }
+        let serial = host::resolve_current(upstream, &selector, access).await?;
+        let token = select_device(access, sessions, logs, group, &serial, id, &request)?;
         return tokio::select! { _=token.cancelled()=>Ok(()), result=async {
             let mut server=adb::connect(upstream).await?;
-            adb::frame(&mut server,&request).await?;
-            relay(client,&mut server,logs,group,serial,id,&token).await
+            adb::frame(&mut server,&format!("host-serial:{serial}:{command}")).await?;
+            relay(client,&mut server,logs,group,&serial,id,&token).await
         }=>result };
     }
     let modern = request.starts_with("host:tport:");
@@ -306,25 +349,11 @@ async fn handle(
             "host-transport-id:"
         };
         let suffix = request.strip_prefix(prefix).unwrap();
-        let (tid, command) = suffix
-            .split_once(':')
-            .map_or((suffix, None), |(a, b)| (a, Some(b)));
         let list = adb::query(upstream, "host:devices-l").await?;
         let device = adb::devices(&list)
             .into_iter()
-            .find(|d| d.transport_id == tid && group.members.contains(&d.serial))
+            .find(|d| d.transport_id == suffix && group.members.contains(&d.serial))
             .ok_or("transport id is not assigned to this group")?;
-        if let Some(command) = command {
-            if !allowed_command(command) {
-                return Err("host command denied by ADBShare".into());
-            }
-            let token = select_device(access, sessions, logs, group, &device.serial, id, &request)?;
-            return tokio::select! { _=token.cancelled()=>Ok(()), result=async {
-                let mut server=adb::connect(upstream).await?;
-                adb::frame(&mut server,&format!("host-serial:{}:{command}",device.serial)).await?;
-                relay(client,&mut server,logs,group,&device.serial,id,&token).await
-            }=>result };
-        }
         device.serial
     } else if [
         "host:transport-any",
@@ -344,16 +373,11 @@ async fn handle(
         } else {
             None
         };
-        let candidates: Vec<_> = adb::devices(&list)
-            .into_iter()
-            .filter(|d| group.members.contains(&d.serial) && kind.is_none_or(|k| d.kind == k))
-            .collect();
-        if candidates.len() != 1 {
-            return Err("specify a serial: expected exactly one matching assigned device".into());
-        }
-        candidates[0].serial.clone()
+        host::resolve(&list, &host::Selector::Kind(kind), access)?
     } else {
-        return Err("host request denied or unsupported by ADBShare".into());
+        return Err(port_mapping_error(&request)
+            .unwrap_or("host request denied or unsupported by ADBShare")
+            .into());
     };
     if !group.members.contains(&serial) {
         return Err("device is not assigned to this group".into());
@@ -387,7 +411,10 @@ async fn handle(
     // not bypass the group boundary through an already selected smart socket.
     let service = adb::read_frame(client).await?;
     if service.starts_with("host") || service.starts_with("reverse:") {
-        return Err("service denied by ADBShare (host/reverse)".into());
+        let command = named(&service, group).map(|(_, command)| command);
+        return Err(port_mapping_error(command.as_deref().unwrap_or(&service))
+            .unwrap_or("service denied by ADBShare (host)")
+            .into());
     }
     logs.lock().unwrap().event(Some(&group.id),Some(&serial),Some(id),"service",service.clone());
     adb::frame(&mut server, &service).await?;

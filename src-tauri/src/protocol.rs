@@ -1,4 +1,5 @@
 use serde::Serialize;
+pub mod tracker;
 use std::{io, time::Duration};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -8,24 +9,34 @@ use tokio::{
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 pub async fn read_frame(stream: &mut TcpStream) -> Result<String> {
+    Ok(String::from_utf8(read_frame_bytes(stream).await?)?)
+}
+pub async fn read_frame_bytes(stream: &mut TcpStream) -> Result<Vec<u8>> {
+    timeout(Duration::from_secs(8), read_stream_frame(stream)).await?
+}
+// Tracking can remain idle indefinitely. Only the body of a started frame has a timeout.
+pub async fn read_stream_frame(stream: &mut TcpStream) -> Result<Vec<u8>> {
+    let mut header = [0; 4];
+    stream.read_exact(&mut header).await?;
+    let len = usize::from_str_radix(std::str::from_utf8(&header)?, 16)?;
     timeout(Duration::from_secs(8), async {
-        let mut header = [0; 4];
-        stream.read_exact(&mut header).await?;
-        let len = usize::from_str_radix(std::str::from_utf8(&header)?, 16)?;
         let mut body = vec![0; len];
         stream.read_exact(&mut body).await?;
-        Ok(String::from_utf8(body)?)
+        Ok(body)
     })
     .await?
 }
 pub async fn frame(stream: &mut TcpStream, value: &str) -> Result<()> {
+    frame_bytes(stream, value.as_bytes()).await
+}
+pub async fn frame_bytes(stream: &mut TcpStream, value: &[u8]) -> Result<()> {
     if value.len() > 65535 {
         return Err("ADB frame exceeds 65535 bytes".into());
     }
     stream
         .write_all(format!("{:04x}", value.len()).as_bytes())
         .await?;
-    stream.write_all(value.as_bytes()).await?;
+    stream.write_all(value).await?;
     Ok(())
 }
 pub async fn fail(stream: &mut TcpStream, message: &str) -> Result<()> {
@@ -90,7 +101,10 @@ pub fn devices(payload: &str) -> Vec<Device> {
                     .unwrap_or("")
                     .to_string()
             };
-            let kind = if serial.starts_with("emulator-") || serial.contains(':') {
+            let kind = if serial.starts_with("emulator-")
+                || serial.contains(':')
+                || serial.contains("._adb-tls-")
+            {
                 "local"
             } else {
                 "usb"
@@ -137,5 +151,12 @@ mod tests {
         let list = devices("USB123\tno permissions (user in plugdev group; are your udev rules wrong?)\nUSB456 unauthorized usb:1-2\n");
         assert_eq!(list[0].state, "no-permissions");
         assert_eq!(list[1].state, "unauthorized");
+    }
+
+    #[test]
+    fn wireless_tls_serials_are_local_transports() {
+        let list = devices("adb-ABC-123._adb-tls-connect._tcp device transport_id:7\nUSB123 device usb:1-2 transport_id:8\n");
+        assert_eq!(list[0].kind, "local");
+        assert_eq!(list[1].kind, "usb");
     }
 }

@@ -135,6 +135,22 @@ try {
   );
   assert.equal(await ipc('chinese_font_support', { text: 'English 123' }), true);
   await assert.rejects(ipc('chinese_font_support', { text: '' }));
+  await click('help');
+  await eventually('return document.getElementById("help-dialog").open');
+  await click('help-commands-tab');
+  assert(
+    await execute(
+      'return document.getElementById("help-commands").textContent.includes("forward / reverse") && document.getElementById("help-commands").textContent.includes("protobuf")',
+    ),
+  );
+  assert(
+    await execute(
+      'const e=new KeyboardEvent("keydown",{key:"F1",bubbles:true,cancelable:true});document.dispatchEvent(e);return e.defaultPrevented && document.getElementById("help-dialog").open',
+    ),
+  );
+  await click('close-help');
+  await eventually('return !document.getElementById("help-dialog").open');
+  console.log('PASS Linux help button, command support, F1 handler and close');
   if (fontFallback) {
     assert.equal(await ipc('chinese_font_support', { text: '共享设备' }), false);
     await eventually(
@@ -174,6 +190,14 @@ try {
       'const input=document.getElementById("group-name"); input.value=arguments[0];input.dispatchEvent(new Event("input"));document.querySelector("[data-serial=SIM-PIXEL]").click()',
       [name],
     );
+    await execute(
+      'const s=document.getElementById("sources");s.value="203.0.113.10/32";s.dispatchEvent(new Event("input"));',
+    );
+    assert(
+      await execute(
+        'return !document.getElementById("source-warning").hidden && document.getElementById("source-warning").textContent.includes("non-local addresses")',
+      ),
+    );
     await click('language-toggle');
     await eventually('return !document.body.classList.contains("busy")');
     assert.equal(await execute('return document.getElementById("group-name").value'), name);
@@ -184,6 +208,10 @@ try {
     assert.equal(
       JSON.parse(await readFile(path.join(directory, 'config.json'), 'utf8')).groups[0].name,
       name,
+    );
+    assert.deepEqual(
+      JSON.parse(await readFile(path.join(directory, 'config.json'), 'utf8')).groups[0].sources,
+      ['203.0.113.10/32'],
     );
     // Fault only this command's HTTP response inside the test renderer. Tauri's
     // bridge is immutable; no production override or system setting is involved.
@@ -254,8 +282,24 @@ try {
         'return document.getElementById("devices").textContent.includes("USB 权限不足")',
       ),
     );
+    await execute(
+      'const s=document.getElementById("sources");s.value="203.0.113.10/32";s.dispatchEvent(new Event("input"));',
+    );
+    assert(
+      await execute(
+        'return !document.getElementById("source-warning").hidden && document.getElementById("source-warning").textContent.includes("非局域网地址")',
+      ),
+    );
     await click('toggle');
     await eventually('return document.getElementById("group-state").textContent === "共享中"');
+    assert.deepEqual(
+      JSON.parse(await readFile(path.join(directory, 'config.json'), 'utf8')).groups[0].sources,
+      ['203.0.113.10/32'],
+    );
+    await writeFile(
+      path.join(directory, 'non-local-source-zh.png'),
+      Buffer.from(await request('GET', `/session/${session}/screenshot`), 'base64'),
+    );
     await execute('document.querySelector(".copy").click()');
     await eventually('return document.getElementById("notice").textContent === "命令已复制"');
     await click('toggle');

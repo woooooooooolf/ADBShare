@@ -235,7 +235,7 @@ nav {
 .utility-bar {
   display: flex;
   justify-content: center;
-  gap: 14px;
+  gap: 10px;
   padding-top: 16px;
   margin-top: 14px;
   border-top: 1px solid var(--border);
@@ -541,6 +541,9 @@ textarea {
   line-height: 1.8;
   margin: 8px 0 0;
 }
+.source-warning {
+  color: var(--warning);
+}
 .firewall-bar {
   background: var(--surface);
   border-top: 1px solid var(--border);
@@ -750,6 +753,64 @@ dialog p {
   width: min(760px, 90vw);
   max-height: calc(100dvh - 24px);
   overflow: auto;
+}
+.help-dialog {
+  width: min(1040px, calc(100vw - 24px));
+  height: min(780px, calc(100dvh - 24px));
+  padding: 0;
+}
+.help-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+.help-header {
+  flex-shrink: 0;
+  padding: 22px 24px 0;
+  border-bottom: 1px solid var(--border);
+}
+.help-header .dialog-heading {
+  margin-bottom: 12px;
+}
+.help-header .about-tabs {
+  flex-wrap: wrap;
+  padding-bottom: 14px;
+}
+.help-content {
+  min-height: 0;
+  overflow: auto;
+  padding: 4px 24px 24px;
+}
+.help-content h3 {
+  margin: 22px 0 10px;
+  font-size: 15px;
+  font-weight: 550;
+}
+.help-content li {
+  font-size: 12px;
+  line-height: 1.9;
+  margin-block: 8px;
+}
+.help-content ul,
+.help-content ol {
+  padding-left: 22px;
+}
+.help-content pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding: 14px;
+  background: var(--surface);
+  font-size: 12px;
+  line-height: 1.9;
+}
+.help-content table {
+  table-layout: fixed;
+}
+.help-content th:first-child {
+  width: 32%;
+}
+.help-content td {
+  vertical-align: top;
+  line-height: 1.8;
 }
 table {
   width: 100%;

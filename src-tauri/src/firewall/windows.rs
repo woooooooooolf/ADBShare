@@ -65,6 +65,16 @@ fn elevate(args: &str) -> Result<(), String> {
     Ok(())
 }
 
+fn remote_addresses(sources: &str) -> Result<String, String> {
+    let mut all = false;
+    for source in sources.split(',') {
+        all |= Network::parse(source)?.is_all();
+    }
+    // Windows Firewall rejects /0 in its address list. The local rule address
+    // and gateway listener are IPv4, so "*" expresses the same source range.
+    Ok(if all { "*".into() } else { sources.into() })
+}
+
 /// Elevated helper: exact validated UUIDs only. COM Remove is idempotent for a
 /// missing rule but propagates permission and policy errors (unlike ignored netsh exits).
 pub fn helper(args: &[String]) -> Result<(), String> {
@@ -89,11 +99,24 @@ pub fn helper(args: &[String]) -> Result<(), String> {
     if port == 0 || address.is_unspecified() {
         return Err("Invalid endpoint".into());
     }
-    for source in args[5].split(',') {
-        Network::parse(source)?;
-    }
+    let sources = remote_addresses(&args[5])?;
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     let name = quote(&format!("ADBShare-{}", args[2]));
-    powershell(&format!("$rules=(New-Object -ComObject HNetCfg.FwPolicy2).Rules; $rules.Remove({name}); $rule=New-Object -ComObject HNetCfg.FWRule; $rule.Name={name}; $rule.Description='Managed by ADBShare'; $rule.ApplicationName={}; $rule.Protocol=6; $rule.LocalPorts='{port}'; $rule.LocalAddresses='{address}'; $rule.RemoteAddresses={}; $rule.Direction=1; $rule.Action=1; $rule.Profiles=3; $rule.InterfaceTypes='LAN,Wireless'; $rule.Enabled=$true; $rules.Add($rule);",quote(&exe.to_string_lossy()),quote(&args[5])))?;
+    powershell(&format!("$rules=(New-Object -ComObject HNetCfg.FwPolicy2).Rules; $rules.Remove({name}); $rule=New-Object -ComObject HNetCfg.FWRule; $rule.Name={name}; $rule.Description='Managed by ADBShare'; $rule.ApplicationName={}; $rule.Protocol=6; $rule.LocalPorts='{port}'; $rule.LocalAddresses='{address}'; $rule.RemoteAddresses={}; $rule.Direction=1; $rule.Action=1; $rule.Profiles=3; $rule.InterfaceTypes='LAN,Wireless'; $rule.Enabled=$true; $rules.Add($rule);",quote(&exe.to_string_lossy()),quote(&sources)))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::remote_addresses;
+
+    #[test]
+    fn public_sources_and_all_ipv4_are_validated_before_firewall_translation() {
+        let sources = "203.0.113.10/32,198.51.100.0/24";
+        assert_eq!(remote_addresses(sources).unwrap(), sources);
+        assert_eq!(remote_addresses("0.0.0.0/0").unwrap(), "*");
+        assert_eq!(remote_addresses("203.0.113.10/0,10.0.0.1").unwrap(), "*");
+        assert!(remote_addresses("0.0.0.0/0,invalid").is_err());
+        assert!(remote_addresses("*").is_err());
+    }
 }

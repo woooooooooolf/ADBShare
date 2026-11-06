@@ -74,7 +74,7 @@ async fn start_refreshes_latest_rules_and_failed_elevation_never_starts_listener
     app.update_firewall(&g.id, false).await.unwrap();
     let mut latest = g.clone();
     latest.port += 1;
-    latest.sources = vec!["192.168.1.99".into()];
+    latest.sources = vec!["203.0.113.10/32".into(), "198.51.100.0/24".into()];
     app.inner.lock().await.config.groups[0] = latest.clone();
     app.update_firewall(&g.id, false).await.unwrap();
     let applied = backend.applied.lock().unwrap();
