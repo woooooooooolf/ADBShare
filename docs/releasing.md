@@ -1,6 +1,6 @@
 # 版本与发布
 
-当前版本为 **V0.9.0**，主版本仍为 V0。仓库与 Release 已公开，正式发布附件可以直接下载。V0.8.0 的历史标签、说明和附件保留原样。仓库权限与协作约定见 [仓库维护](repository.md)。
+当前版本为 **V0.10.0**，主版本仍为 V0。仓库与 Release 已公开，正式发布附件可以直接下载。历史标签、说明和附件保留原样。仓库权限与协作约定见 [仓库维护](repository.md)。
 
 ## 固定发布约束
 
@@ -47,11 +47,11 @@
 4. 推送分支并创建 PR，等待 Windows x64 与 Linux x64 检查通过；保持分支与 `main` 同步，解决未完成的讨论后使用 Squash 合并。不要求第二位维护者审批，不使用管理员绕过。
 5. 更新本地 `main`，等待合并提交的主分支工作流通过。确认本地 HEAD、远端 main 和成功工作流的 head SHA 一致，再创建并推送注释标签。
 
-例如准备 V0.9.1、完成上述检查并合并后：
+例如准备 V0.10.1、完成上述检查并合并后：
 
 ```powershell
-git tag -a V0.9.1 -m "ADBShare V0.9.1"
-git push origin V0.9.1
+git tag -a V0.10.1 -m "ADBShare V0.10.1"
+git push origin V0.10.1
 ```
 
 标签支持 `Vx.y.z` / `vx.y.z`，必须与应用版本完全一致。不要移动已经发布的标签。
@@ -66,6 +66,7 @@ git push origin V0.9.1
 - 后续 Windows x64 发布仅上传独立 EXE 和同名 `.exe.sha256`；Linux x64 使用 AppImage 和同名 `.AppImage.sha256`。发布任务等待两个平台成功，合计四个文件；源码使用 GitHub 自动提供的归档。
 - 已发布的 `V0.8.0` 附件保持原样；本格式调整从后续发布开始生效。
 - Windows 原生窗口交互回归在本机执行；两平台 CI 均运行 Rust 测试及标准 adb 与虚拟上游的集成测试。Linux 另用官方 tauri-driver / WebKitGTK / Xvfb 测试实际 AppImage 的界面。
+- 两平台标准 adb 集成使用固定 Android Platform Tools 37.0.1，下载地址与 SHA-256 保存在 `scripts/tests/install-platform-tools.mjs`，避免 Runner 系统 adb 的功能差异；这些工具只用于测试，不加入程序成果物。
 - Linux 构建固定为 Ubuntu 22.04，使用 `tauri.linux.conf.json` 生成 AppImage。不能直接把更新宿主构建的文件作为最低版本兼容证据。
 - Linux 原生界面检查同时覆盖中文字体可用和仅有拉丁字体两种环境，确认缺字时实际语言与保存值均为英文。Runner 上的字体包只用于测试，不作为程序资源打包。
 

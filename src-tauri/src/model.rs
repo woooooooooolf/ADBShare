@@ -46,20 +46,13 @@ impl Network {
         }
         let mask = u32::MAX.checked_shl(32 - prefix).unwrap_or(0);
         let base = u32::from(ip) & mask;
-        let end = base | !mask;
-        let private = [
-            (0x0a000000, 0x0affffff),
-            (0xac100000, 0xac1fffff),
-            (0xc0a80000, 0xc0a8ffff),
-            (0x7f000000, 0x7fffffff),
-        ];
-        if !private.iter().any(|(a, b)| base >= *a && end <= *b) {
-            return Err("来源范围须位于私有 IPv4 或回环地址内".into());
-        }
         Ok(Self { base, mask })
     }
     pub fn contains(&self, ip: Ipv4Addr) -> bool {
         u32::from(ip) & self.mask == self.base
+    }
+    pub fn is_all(&self) -> bool {
+        self.mask == 0
     }
 }
 impl Config {
@@ -134,22 +127,63 @@ pub fn save(path: &Path, config: &Config) -> Result<(), String> {
 mod tests {
     use super::*;
     #[test]
-    fn source_ranges_are_bounded() {
+    fn source_ranges_accept_any_ipv4_but_enforce_cidr_boundaries() {
         assert!(Network::parse("192.168.1.20/24")
             .unwrap()
             .contains("192.168.1.99".parse().unwrap()));
         assert!(!Network::parse("192.168.1.0/24")
             .unwrap()
             .contains("192.168.2.1".parse().unwrap()));
-        for s in [
-            "0.0.0.0/0",
-            "8.8.8.8",
-            "10.0.0.1/7",
-            "172.16.0.0/11",
-            "10.0.0.1/33",
-        ] {
-            assert!(Network::parse(s).is_err());
+        for s in ["8.8.8.8", "203.0.113.10/32", "10.0.0.1/7", "172.16.0.0/11"] {
+            assert!(Network::parse(s).is_ok(), "{s}");
         }
+        let public = Network::parse("203.0.113.10/24").unwrap();
+        assert!(public.contains("203.0.113.255".parse().unwrap()));
+        assert!(!public.contains("203.0.112.255".parse().unwrap()));
+        assert!(!public.contains("203.0.114.0".parse().unwrap()));
+        let single = Network::parse("203.0.113.10").unwrap();
+        assert!(single.contains("203.0.113.10".parse().unwrap()));
+        assert!(!single.contains("203.0.113.11".parse().unwrap()));
+        let all = Network::parse("0.0.0.0/0").unwrap();
+        assert!(all.is_all());
+        assert!(!single.is_all());
+        assert!(all.contains(Ipv4Addr::UNSPECIFIED));
+        assert!(all.contains(Ipv4Addr::BROADCAST));
+        for s in [
+            "10.0.0.1/33",
+            "1.2.3.4/-1",
+            "1.2.3.4/24/1",
+            "256.1.1.1",
+            "localhost",
+            "::1",
+            "1.2.3.4:5037",
+            "",
+        ] {
+            assert!(Network::parse(s).is_err(), "{s}");
+        }
+    }
+    #[test]
+    fn public_source_config_roundtrips_without_private_network_restrictions() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        let config = Config {
+            groups: vec![Group {
+                id: uuid::Uuid::new_v4().to_string(),
+                name: "Relay".into(),
+                address: Ipv4Addr::LOCALHOST,
+                port: 15037,
+                sources: vec![
+                    "203.0.113.10/32".into(),
+                    "198.51.100.0/24".into(),
+                    "0.0.0.0/0".into(),
+                ],
+                members: vec!["A".into()],
+                disabled_members: vec![],
+            }],
+            ..Config::default()
+        };
+        save(&path, &config).unwrap();
+        assert_eq!(load(&path).unwrap(), config);
     }
     #[test]
     fn atomic_config_roundtrip_and_corruption() {

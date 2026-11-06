@@ -1,6 +1,6 @@
 [package]
 name = "adbshare"
-version = "0.9.0"
+version = "0.10.0"
 edition = "2021"
 description = "Portable LAN ADB device sharing"
 authors = ["wooooooooolf"]
@@ -21,6 +21,7 @@ tempfile = "3"
 tauri-plugin-dialog = "2"
 tauri-plugin-clipboard-manager = "2"
 tauri-plugin-single-instance = "2"
+prost = "0.14"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"

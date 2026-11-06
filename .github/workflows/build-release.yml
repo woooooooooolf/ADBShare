@@ -74,10 +74,11 @@ jobs:
         run: npm test
       - name: Build application
         run: npm run build:app
+      - name: Prepare pinned Android Platform Tools
+        run: node scripts/tests/install-platform-tools.mjs
       - name: Test standard adb client
         timeout-minutes: 5
         run: |
-          $env:ADB_PATH = Join-Path $env:ANDROID_HOME 'platform-tools/adb.exe'
           if (-not (Test-Path -LiteralPath $env:ADB_PATH)) { throw 'Android Platform Tools not found' }
           $env:ADB_SHARE_EXE = Join-Path $PWD 'src-tauri/target/release/adbshare.exe'
           npm run test:integration
@@ -113,7 +114,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
-            librsvg2-dev patchelf libfuse2 webkit2gtk-driver xvfb xauth dbus-x11 adb \
+            librsvg2-dev patchelf libfuse2 webkit2gtk-driver xvfb xauth dbus-x11 unzip \
             fonts-dejavu-core fonts-noto-cjk
           rustup show active-toolchain
           rustup component add rustfmt clippy
@@ -163,6 +164,8 @@ jobs:
           test "$code" -eq 1
           printf '%s\n' "$output" | grep -F 'Please run it without sudo.'
           test ! -e "$RUNNER_TEMP/root-denied"
+      - name: Prepare pinned Android Platform Tools
+        run: node scripts/tests/install-platform-tools.mjs
       - name: Test the packaged AppImage with standard adb and native WebKitGTK
         timeout-minutes: 5
         env:

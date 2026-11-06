@@ -56,7 +56,10 @@ export class Reader {
     return data;
   }
   async frame() {
-    return (await this.bytes(Number.parseInt((await this.bytes(4)).toString(), 16))).toString();
+    return (await this.frameBytes()).toString();
+  }
+  async frameBytes() {
+    return this.bytes(Number.parseInt((await this.bytes(4)).toString(), 16));
   }
 }
 const shellPacket = (id, data) => {
@@ -65,6 +68,34 @@ const shellPacket = (id, data) => {
   header.writeUInt32LE(data.length, 1);
   return Buffer.concat([header, data]);
 };
+// Independent minimal AOSP protobuf encoder for the synthetic upstream fixture.
+const varint = (value) => {
+  let n = BigInt(value);
+  const bytes = [];
+  while (n >= 128n) {
+    bytes.push(Number(n & 127n) | 128);
+    n >>= 7n;
+  }
+  return Buffer.from([...bytes, Number(n)]);
+};
+const protoString = (tag, value) => {
+  const bytes = Buffer.from(value);
+  return Buffer.concat([varint((tag << 3) | 2), varint(bytes.length), bytes]);
+};
+const protoNumber = (tag, value) => Buffer.concat([varint(tag << 3), varint(value)]);
+const deviceProto = (devices) =>
+  Buffer.concat(
+    devices.map((d) => {
+      const message = Buffer.concat([
+        protoString(1, d.serial),
+        protoNumber(2, { device: 8, recovery: 10, bootloader: 7, offline: 6 }[d.state] || 6),
+        protoString(5, d.model),
+        protoNumber(7, d.serial.startsWith('emulator-') ? 2 : 1),
+        protoNumber(10, d.id),
+      ]);
+      return Buffer.concat([Buffer.from([10]), varint(message.length), message]);
+    }),
+  );
 export async function freePort() {
   const server = net.createServer();
   server.listen(0, '127.0.0.1');
@@ -96,7 +127,31 @@ export async function fixture() {
       const req = await reader.frame();
       state.requests.push(req);
       if (req === 'host:version') return okay('0029');
-      if (['host:features', 'host:host-features'].includes(req)) return okay('shell_v2,cmd');
+      if (req === 'host:host-features') return okay('shell_v2,cmd,devicetracker_proto_format');
+      if (req === 'host:mdns:check') return okay('synthetic mdns available');
+      if (req === 'host:server-status')
+        return okay(
+          Buffer.concat([
+            protoNumber(1, 1),
+            protoNumber(3, 2),
+            protoString(5, '1.0.41'),
+            protoString(6, 'synthetic'),
+            protoString(7, '/synthetic/adb'),
+          ]),
+        );
+      if (req === 'host:track-devices-proto-binary') {
+        socket.write('OKAY');
+        let previous;
+        const send = () => {
+          const payload = deviceProto(state.inventory);
+          if (!previous?.equals(payload)) socket.write(pack(payload));
+          previous = payload;
+        };
+        send();
+        const timer = setInterval(send, 20);
+        socket.once('close', () => clearInterval(timer));
+        return;
+      }
       if ((req === 'host:devices' || req === 'host:devices-l') && state.deviceError)
         return fail(state.deviceError);
       if (req === 'host:devices' || req === 'host:devices-l')
@@ -113,9 +168,11 @@ export async function fixture() {
         const prefix = `host-serial:${d.serial}:`;
         if (req.startsWith(prefix)) {
           const cmd = req.slice(prefix.length);
-          if (cmd === 'features') return okay('shell_v2,cmd');
+          if (cmd === 'features') return okay('shell_v2,cmd,devicetracker_proto_format');
           if (cmd === 'get-state') return okay(d.state);
           if (cmd === 'get-serialno') return okay(d.serial);
+          if (cmd === 'get-devpath') return okay('usb:synthetic');
+          if (cmd === 'reconnect') return okay(`reconnecting ${d.serial}`);
           return fail('fake host command unsupported');
         }
         if (req === `host:transport:${d.serial}` || req === `host:tport:serial:${d.serial}`)

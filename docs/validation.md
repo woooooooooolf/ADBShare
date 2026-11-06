@@ -22,6 +22,27 @@ npm run test:ui
 
 运行 `npm run package` 每平台只生成程序和完整同名 `.sha256`，源码使用 GitHub 自动归档。远端流程见 [发布说明](releasing.md)。
 
+## V0.10.0 发布门禁
+
+版本清单统一为 0.10.0，主版本仍为 V0。发布分支通过 PR 检查后合并；主分支工作流成功且提交 SHA 对齐后，再推送注释标签 V0.10.0。标签工作流在 Windows x64 和 Ubuntu 22.04 x64 上分别构建 EXE / AppImage，执行标准 adb 集成；Linux 另对实际 AppImage 执行正常字体与缺字回退的 WebKitGTK 回归。仅当两平台均成功时发布四个程序 / 校验文件。
+
+两平台 CI 的 Android Platform Tools 固定为已验证的 37.0.1，官方归档地址及 SHA-256 见 `scripts/tests/install-platform-tools.mjs`。工具归档还与 Google stable SDK 元数据中的大小及 SHA-1 核对；这些是测试工具，不加入程序发布附件。下面的本机与 WSL 记录描述本地验证，最低 Ubuntu 22.04 的 AppImage 验证由上述 CI 门禁补充。
+
+## 来源地址范围与公网中转
+
+- 来源配置允许任意有效 IPv4 / CIDR，保留格式和前缀 0–32 校验；单 IP、公共地址段、跨越私有网段边界的 CIDR 和 `/0` 均可保存。来源匹配仍按实际 TCP 对端地址和 CIDR 边界执行，配置公网地址不会自动放行其他来源。
+- Windows 本机通过 38 项 Rust 测试、Clippy、Release 构建、标准 adb 37.0.1 集成与完整原生窗口回归。验证公网来源保存 / 启停 / 重载、中英文非阻断警告、混合来源、局域网范围不警告、跨私有边界范围警告及非法 IPv4 仍被拒绝。
+- Windows 防火墙地址属性通过未注册的 COM 规则对象验证：公网单 IP、CIDR、跨私有边界网段可解析；字面 `/0` 不被接受，程序将覆盖全部 IPv4 的来源转换为 `*`，仍以组的 IPv4 监听地址限定本地端点。该检查没有增删实际系统规则，也没有执行真实 UAC 规则变更。
+- WSL Ubuntu 24.04 的全部 Rust 测试、Clippy、原生 Release 构建、标准 adb 集成及正常字体 / 缺字两套 WebKitGTK 回归通过，包含公网来源配置保存、启动和中英文警告。测试使用独立临时目录和虚拟设备，未连接实际公网中转服务器；没有新增真机、双机 LAN 或最低版本 AppImage 验证。
+
+## ADB 命令适配与 F1 帮助
+
+- Windows 本机通过 36 项 Rust 测试、Clippy、前端与 Release EXE 构建、标准 adb 37.0.1 隔离集成及完整原生窗口回归。验证默认 / serial / transport-id / USB / 网络选择、状态与组合等待、限定设备的 reconnect、只读诊断和两种 protobuf 跟踪；端口映射及全局管理请求继续被拒绝。
+- 新增协议回归覆盖组外设备排除、多设备歧义、禁用设备撤销等待、offline 与 disconnect 的区别、上游查询失败不误报断开、protobuf 二进制保真与文本转义、跟踪空闲超过普通请求超时以及仅配置变化时的可见设备更新。
+- Windows 实际 WebView 检查帮助按钮位于“关于”右侧且为方形，F1 重复打开、Esc 返回输入焦点、键盘切换页签、中英文 / 明暗主题、嵌套弹窗和退出过程保护。640 × 480 下标题与关闭按钮保持可见，内容仅纵向滚动。
+- WSL Ubuntu 24.04 使用 Node 24.14.1、Rust 1.99.1 和 adb 37.0.1，通过全部 Rust 测试、Clippy、原生 Release 构建及相同标准 adb 集成。独立临时目录中以普通用户运行实际 WebKitGTK / Xvfb，帮助按钮、支持表、F1 事件处理与关闭通过；同时通过正常中文字体和仅拉丁字体的两套原生界面回归，没有安装字体或修改系统设置。
+- 本轮 Linux 验证使用原生可执行文件，没有重新构建或验收最低 Ubuntu 22.04 AppImage。没有新增真机 Android、多台电脑 LAN、真实 UAC 防火墙变更或全部 adb 版本的验证，不能据此承诺 IDE / 投屏与全部高级安装流程兼容。功能范围见 [ADB 命令支持范围](adb-support.md)。
+
 ## glib 安全补丁
 
 Linux 依赖链保留 GTK3 兼容的 glib 0.18.5，仅回移上游 PR #1343 的两行修复。源码、许可证、原始包校验值和差异见 [第三方源码补丁](../third_party/README.md)。`npm run glib:check` 同时检查整个源码目录、实际 Cargo 解析图和锁文件；不全局忽略漏洞公告。

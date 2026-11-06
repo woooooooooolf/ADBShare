@@ -13,7 +13,7 @@ export function createAbout(run: RunAction) {
     if (!info) return;
     const date = new Date(info.buildTimestamp * 1000);
     $('about-summary').innerHTML =
-      `<div class="about-brand">${glyph}<strong>${esc(info.name)}</strong></div><dl><dt>${t('version')}</dt><dd>${esc(info.version)}</dd><dt>${t('buildTime')}</dt><dd><time datetime="${date.toISOString()}">${date.toLocaleString(language === 'zh' ? 'zh-CN' : 'en-US', { timeZoneName: 'short' })}</time></dd><dt>${t('author')}</dt><dd>${esc(info.author)}</dd><dt>${t('projectLicense')}</dt><dd>GPLv3 <span class="quiet">(${esc(info.license)})</span></dd><dt>${t('source')}</dt><dd>${t('sourceRepository')}</dd></dl><p class="legal">${t('legal', { author: info.author })}</p><p class="quiet">${t('compliance')}</p>`;
+      `<div class="about-brand">${glyph}<strong>${esc(info.name)}</strong></div><dl><dt>${t('version')}</dt><dd>${esc(info.version)}</dd><dt>${t('buildTime')}</dt><dd><time datetime="${date.toISOString()}">${date.toLocaleString(language === 'zh' ? 'zh-CN' : 'en-US', { timeZoneName: 'short' })}</time></dd><dt>${t('author')}</dt><dd>${esc(info.author)}</dd><dt>${t('projectLicense')}</dt><dd>GPLv3 <span class="quiet">(${esc(info.license)})</span></dd><dt>${t('source')}</dt><dd>${t('sourceRepository')}</dd></dl><p class="field-help">${t('portMappingUnsupported')}</p><p class="legal">${t('legal', { author: info.author })}</p><p class="quiet">${t('compliance')}</p>`;
   }
   function renderComponents() {
     $('third-party-components').innerHTML =

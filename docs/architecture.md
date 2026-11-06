@@ -13,6 +13,7 @@ src/
   ui/
     template.ts           静态页面骨架
     about.ts              关于页与许可证表格
+    help.ts               F1 帮助弹窗、页签与键盘交互
     activity.ts           全局 / 组 / 设备活动窗口
     dialogs.ts / dom.ts   确认、外部关闭和 DOM 工具
 src-tauri/src/
@@ -20,6 +21,8 @@ src-tauri/src/
   about.rs                程序元数据与离线许可证目录
   model.rs / protocol.rs  配置约束、原子保存及 ADB 帧与设备解析
   gateway.rs              来源校验、设备授权、连接撤销与字节流透传
+  gateway/host.rs         组内主机请求选择、状态等待与 protobuf 跟踪
+  protocol/tracker.rs     AOSP 设备跟踪消息结构、组内过滤与文本输出
   history.rs              有界内存记录与设备状态变化
   firewall.rs             防火墙规则及失败恢复台账的公共逻辑
   firewall/windows.rs     Windows 规则查询、提权辅助进程及 COM 操作

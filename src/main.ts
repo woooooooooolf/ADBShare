@@ -13,11 +13,13 @@ import {
   type Language,
 } from './i18n';
 import { icons } from './icons';
+import { hasNonLocalSources } from './source-warning';
 import type { Group, Device, Snapshot } from './types';
 import { $, dialog, esc } from './ui/dom';
 import { appMarkup } from './ui/template';
 import { confirmAction, initializeDialogs } from './ui/dialogs';
 import { createAbout } from './ui/about';
+import { createHelp } from './ui/help';
 import { createActivity } from './ui/activity';
 import './style.css';
 
@@ -51,6 +53,7 @@ const activity = createActivity({
   },
 });
 const about = createAbout(action);
+const help = createHelp(() => !dialog('shutdown-dialog').open);
 initializeDialogs();
 
 function clearNotice() {
@@ -198,6 +201,7 @@ function commands() {
 }
 function renderState() {
   if (activity.isOpen()) activity.render();
+  $('source-warning').hidden = !draft || !hasNonLocalSources(draft.sources);
   if (!data || !draft) return;
   const r = runtime();
   const running = r?.status === 'running';
@@ -253,6 +257,7 @@ function applyLanguage() {
   renderAddressOptions();
   renderLocalDevices();
   about.render();
+  help.render();
   activity.render();
   $('language-toggle').title = t('switchLanguage');
   $('language-toggle').setAttribute('aria-label', t('switchLanguage'));
@@ -273,6 +278,9 @@ function applyLanguage() {
   $('groups').setAttribute('aria-label', t('groups'));
   $('about').title = t('about');
   $('about').setAttribute('aria-label', t('about'));
+  $('help').title = `${t('help')} (F1)`;
+  $('help').setAttribute('aria-label', `${t('help')} (F1)`);
+  $('help-tabs').setAttribute('aria-label', t('help'));
   document.querySelectorAll<HTMLElement>('.close-button').forEach((b) => {
     b.title = t('close');
     b.setAttribute('aria-label', t('close'));
@@ -560,6 +568,7 @@ async function boot() {
         'confirm-dialog',
         'local-devices-dialog',
         'about-dialog',
+        'help-dialog',
         'history-dialog',
       ])
         dialog(id).close();

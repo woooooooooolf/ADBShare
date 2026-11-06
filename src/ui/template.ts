@@ -30,6 +30,15 @@ export const appMarkup = /* HTML */ ` <aside>
         <button id="about" class="square-button" aria-haspopup="dialog" aria-expanded="false">
           ${icons.info}
         </button>
+        <button
+          id="help"
+          class="square-button"
+          aria-haspopup="dialog"
+          aria-expanded="false"
+          aria-keyshortcuts="F1"
+        >
+          ${icons.help}
+        </button>
       </div>
     </div>
   </aside>
@@ -93,9 +102,21 @@ export const appMarkup = /* HTML */ ` <aside>
               </div>
               <label
                 ><span data-i18n="sources"></span
-                ><textarea id="sources" rows="2" data-placeholder="sourcesPlaceholder"></textarea>
+                ><textarea
+                  id="sources"
+                  rows="2"
+                  data-placeholder="sourcesPlaceholder"
+                  aria-describedby="source-hint source-warning"
+                ></textarea>
               </label>
-              <p class="field-help" data-i18n="sourceHint"></p>
+              <p id="source-hint" class="field-help" data-i18n="sourceHint"></p>
+              <p
+                id="source-warning"
+                class="field-help source-warning"
+                role="status"
+                data-i18n="nonLocalSourceWarning"
+                hidden
+              ></p>
             </div>
             <div id="firewall-controls" class="firewall-bar" hidden>
               <span data-i18n="firewall"></span
@@ -120,6 +141,9 @@ export const appMarkup = /* HTML */ ` <aside>
               </div>
             </div>
             <div id="connection"></div>
+            <div class="form">
+              <p class="field-help" data-i18n="portMappingUnsupported"></p>
+            </div>
           </section>
           <section class="card">
             <div class="section-head compact">
@@ -219,6 +243,52 @@ export const appMarkup = /* HTML */ ` <aside>
       aria-labelledby="third-party-tab"
     ></div>
     <pre id="license-document" hidden tabindex="0" lang="en"></pre>
+  </dialog>
+  <dialog id="help-dialog" class="help-dialog" aria-labelledby="help-title">
+    <div class="help-header">
+      <div class="dialog-heading">
+        <h2 id="help-title" data-i18n="help"></h2>
+        <button id="close-help" class="square-button close-button">${icons.close}</button>
+      </div>
+      <div id="help-tabs" class="about-tabs" role="tablist" aria-label="Help">
+        <button
+          id="help-guide-tab"
+          role="tab"
+          data-help-tab="guide"
+          aria-controls="help-guide"
+          data-i18n="helpGuide"
+        ></button>
+        <button
+          id="help-commands-tab"
+          role="tab"
+          data-help-tab="commands"
+          aria-controls="help-commands"
+          data-i18n="helpCommands"
+        ></button>
+        <button
+          id="help-differences-tab"
+          role="tab"
+          data-help-tab="differences"
+          aria-controls="help-differences"
+          data-i18n="helpDifferences"
+        ></button>
+      </div>
+    </div>
+    <div id="help-content" class="help-content" tabindex="0">
+      <section id="help-guide" role="tabpanel" aria-labelledby="help-guide-tab"></section>
+      <section
+        id="help-commands"
+        role="tabpanel"
+        aria-labelledby="help-commands-tab"
+        hidden
+      ></section>
+      <section
+        id="help-differences"
+        role="tabpanel"
+        aria-labelledby="help-differences-tab"
+        hidden
+      ></section>
+    </div>
   </dialog>
   <dialog id="confirm-dialog">
     <h2 id="confirm-title"></h2>

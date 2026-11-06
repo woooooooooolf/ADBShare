@@ -20,6 +20,7 @@ export function initializeDialogs() {
     ['settings-dialog', 'settings'],
     ['local-devices-dialog', 'device-entry'],
     ['about-dialog', 'about'],
+    ['help-dialog', 'help'],
     ['history-dialog', 'history-entry'],
   ]) {
     dialog(modal).addEventListener('close', () => $(button).setAttribute('aria-expanded', 'false'));
