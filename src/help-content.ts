@@ -23,7 +23,7 @@ export const helpContent: Record<'zh' | 'en', HelpContent> = {
     startTitle: '开始共享',
     steps: [
       '共享主机和远端电脑均需自行安装 Android Platform Tools。先在共享主机连接设备，并在设备上允许 USB 调试；ADBShare 不内置 adb。',
-      '在本机 ADB 设置中确认服务可用，新建共享组，选择设备、局域网网卡、独立端口和允许接入的来源 IP / 网段，然后保存并共享。',
+      '在本机 ADB 设置中确认服务可用，新建共享组，选择设备、局域网网卡、仅 IPv4 / 仅 IPv6 / 双协议、可用地址、独立端口和允许接入的来源 IP / 网段，然后保存并共享。',
       'Windows 根据提示配置防火墙规则；Linux 需要自行放行共享 TCP 端口并配置 USB / udev 权限，以普通用户运行。',
       '远端使用标准 adb 的 -H / -P 访问共享入口；无需对共享主机执行 adb connect，也无需把 USB 设备切换为网络调试。',
     ],
@@ -32,6 +32,7 @@ export const helpContent: Record<'zh' | 'en', HelpContent> = {
       '将示例 IP、共享端口、SERIAL 和文件名替换为实际值。共享组的远端访问区提供当前配置对应的命令，可直接复制。',
     dailyTitle: '日常操作',
     daily: [
+      '启动前会重新检查网卡、地址和协议的实际绑定能力，缺少所需协议地址时不能启动。IPv6 命令使用 -H "[地址]"；fe80:: 链路本地地址需要远端电脑自己的接口编号。本机上游 ADB 仍使用 IPv4 回环地址。',
       '每组可以独立启停。设备禁用会断开该设备的共享会话；停止组会断开该组全部共享会话。重新打开程序不会自动恢复共享。',
       '修改运行中的组前先停止共享；修改本机 ADB 服务端口前先停止全部组。本机可以继续直接使用原有 ADB Server。',
       '运行日志只保留本次运行的有界内存记录，交互数据是有上限的预览。需要保留时及时复制或保存；完整命令输出应由远端保存。',
@@ -102,7 +103,7 @@ export const helpContent: Record<'zh' | 'en', HelpContent> = {
     ],
     boundaryTitle: '使用边界',
     boundaries: [
-      '来源支持任意有效 IPv4 或 CIDR（前缀 0–32），包括公网中转服务器。超出私有、回环及链路本地网段的范围会显示警告，但仍可保存和共享；0.0.0.0/0 会允许所有 IPv4 来源。',
+      '来源支持 IPv4 / CIDR（前缀 0–32）及 IPv6 / CIDR（前缀 0–128），每种监听协议至少配置一个来源，包括公网中转服务器。超出私有、回环及链路本地网段的范围会显示警告，但仍可保存和共享；0.0.0.0/0 会允许所有 IPv4 来源，::/0 会允许所有 IPv6 来源。',
       '当前没有账户认证或加密，来源 IP / 网段限制不能替代用户身份认证。公网或异地中转时，仅允许可信中转主机，并为中转链路配置访问控制与加密。',
       '来源白名单匹配 ADBShare 实际收到的 TCP 对端地址，不会自动恢复中转前的远端用户 IP。本机隧道若以回环地址接入，会按本机连接处理，需要在中转入口限制访问。',
       'Windows 自动防火墙规则适用于专用 / 域网络。公网来源地址不等于网卡的公用网络配置；请核对监听网卡的网络类型以及中转链路的放行规则。',
@@ -123,7 +124,7 @@ export const helpContent: Record<'zh' | 'en', HelpContent> = {
     startTitle: 'Start sharing',
     steps: [
       'Install Android Platform Tools on the sharing host and remote computer. Connect the device on the sharing host and approve USB debugging. ADBShare does not bundle adb.',
-      'Check the local ADB service in Settings. Create a group, select its devices, LAN adapter, unique port and allowed source IPs / subnets, then save and share.',
+      'Check the local ADB service in Settings. Create a group, select its devices, LAN adapter, IPv4-only / IPv6-only / dual mode, available addresses, unique port and allowed source IPs / subnets, then save and share.',
       'On Windows, approve firewall rule configuration when requested. On Linux, allow the sharing TCP port and configure USB / udev permissions yourself; run as a regular user.',
       'Use standard adb -H / -P on the remote computer. Do not adb connect to the sharing endpoint; USB devices do not need to switch to network debugging.',
     ],
@@ -132,6 +133,7 @@ export const helpContent: Record<'zh' | 'en', HelpContent> = {
       'Replace the IP, sharing port, SERIAL and file names. The Remote access card provides commands for your current group and lets you copy them.',
     dailyTitle: 'Daily use',
     daily: [
+      'Startup rechecks the adapter, addresses and protocol bind capability. Missing required addresses prevent sharing. IPv6 commands use -H "[address]". Link-local fe80:: addresses require the remote computer’s own interface index. Local upstream ADB still uses IPv4 loopback.',
       'Groups start and stop independently. Disabling a device disconnects its shared sessions; stopping a group disconnects all its sessions. Restarting the app does not resume sharing automatically.',
       'Stop a group before editing it, and stop all groups before changing the local ADB server port. Local tools can continue using the original ADB Server directly.',
       'Logs are bounded, in-memory records for the current run. Payload previews are truncated. Copy or save records when needed; capture complete command output on the remote computer.',
@@ -202,7 +204,7 @@ export const helpContent: Record<'zh' | 'en', HelpContent> = {
     ],
     boundaryTitle: 'Usage boundaries',
     boundaries: [
-      'Sources accept any valid IPv4 address or CIDR (prefix 0–32), including public relay servers. Ranges outside private, loopback and link-local blocks display a warning but can still be saved and shared. 0.0.0.0/0 allows all IPv4 sources.',
+      'Sources accept IPv4 / CIDR (prefix 0–32) and IPv6 / CIDR (prefix 0–128). Configure at least one source per listening protocol, including public relay servers. Ranges outside private, loopback and link-local blocks display a warning but can still be saved and shared. 0.0.0.0/0 allows all IPv4 sources; ::/0 allows all IPv6 sources.',
       'There is no account authentication or encryption; source restrictions are not user authentication. For public or cross-site relays, allow only trusted relay hosts and protect the relay connection with access control and encryption.',
       'The source list matches the TCP peer address actually received by ADBShare. It does not recover the original user IP before a relay. A local tunnel connecting through loopback is treated as a local connection, so restrict access at the relay entry point.',
       "Automatic Windows firewall rules apply to Private / Domain networks. A public source IP is different from the adapter's Public network profile; check the listening adapter profile and relay firewall rules.",

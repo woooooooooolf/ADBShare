@@ -1,26 +1,52 @@
-// Advisory only. Rust remains the authority for IPv4 / CIDR validation and access checks.
-// A range is local only when its entire normalized interval is inside one local block.
+// Advisory only. Rust remains the authority for validation and access checks.
+function addressValue(text: string): { value: bigint; bits: number } | null {
+  if (!text.includes(':')) {
+    if (!/^(0|[1-9]\d{0,2})(\.(0|[1-9]\d{0,2})){3}$/.test(text)) return null;
+    const bytes = text.split('.').map(Number);
+    if (bytes.some((n) => n > 255)) return null;
+    return { value: bytes.reduce((v, b) => v * 256n + BigInt(b), 0n), bits: 32 };
+  }
+  if (!/^[\da-f:]+$/i.test(text) || text.includes(':::')) return null;
+  const halves = text.split('::');
+  if (halves.length > 2) return null;
+  const left = halves[0] ? halves[0].split(':') : [];
+  const right = halves.length === 2 && halves[1] ? halves[1].split(':') : [];
+  const count = left.length + right.length;
+  if (halves.length === 1 ? count !== 8 : count >= 8) return null;
+  const words = [...left, ...Array<string>(8 - count).fill('0'), ...right];
+  if (words.some((w) => !/^[\da-f]{1,4}$/i.test(w))) return null;
+  const value = words.reduce((v, w) => v * 65536n + BigInt(`0x${w}`), 0n);
+  if (value >> 32n === 0xffffn) return null;
+  return { value, bits: 128 };
+}
 export function hasNonLocalSources(sources: readonly string[]): boolean {
-  const localBlocks = [
-    [0x0a000000, 0x0affffff],
-    [0xac100000, 0xac1fffff],
-    [0xc0a80000, 0xc0a8ffff],
-    [0x7f000000, 0x7fffffff],
-    [0xa9fe0000, 0xa9feffff],
-  ];
+  const blocks = [
+    ['10.0.0.0', 8],
+    ['172.16.0.0', 12],
+    ['192.168.0.0', 16],
+    ['127.0.0.0', 8],
+    ['169.254.0.0', 16],
+    ['::1', 128],
+    ['fc00::', 7],
+    ['fe80::', 10],
+  ] as const;
   return sources.some((source) => {
     const parts = source.split('/');
-    if (parts.length > 2 || !/^(0|[1-9]\d{0,2})(\.(0|[1-9]\d{0,2})){3}$/.test(parts[0]))
-      return false;
-    const octets = parts[0].split('.').map(Number);
-    if (octets.some((n) => n > 255)) return false;
-    if (parts.length === 2 && !/^\+?\d+$/.test(parts[1])) return false;
-    const prefix = parts.length === 2 ? Number(parts[1]) : 32;
-    if (prefix > 32) return false;
-    const ip = octets.reduce((value, octet) => value * 256 + octet, 0);
-    const size = 2 ** (32 - prefix);
-    const base = Math.floor(ip / size) * size;
-    const end = base + size - 1;
-    return !localBlocks.some(([low, high]) => base >= low && end <= high);
+    if (parts.length > 2) return false;
+    const ip = addressValue(parts[0]);
+    if (!ip || (parts.length === 2 && !/^\+?\d+$/.test(parts[1]))) return false;
+    const prefix = parts.length === 2 ? Number(parts[1]) : ip.bits;
+    if (prefix > ip.bits) return false;
+    const size = 1n << BigInt(ip.bits - prefix);
+    const base = (ip.value / size) * size;
+    const end = base + size - 1n;
+    return !blocks.some(([address, blockPrefix]) => {
+      const block = addressValue(address)!;
+      return (
+        ip.bits === block.bits &&
+        base >= block.value &&
+        end < block.value + (1n << BigInt(block.bits - blockPrefix))
+      );
+    });
   });
 }

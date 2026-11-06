@@ -6,7 +6,6 @@ use crate::{
 use serde::Serialize;
 use std::{
     collections::BTreeMap,
-    net::IpAddr,
     pin::Pin,
     sync::{
         atomic::{AtomicU64, Ordering},
@@ -17,7 +16,7 @@ use std::{
 };
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf},
-    net::{TcpListener, TcpStream},
+    net::TcpStream,
     sync::{watch, Semaphore},
     task::{JoinHandle, JoinSet},
 };
@@ -78,6 +77,16 @@ impl Drop for SessionGuard {
 }
 
 pub async fn start(group: Group, upstream: u16, logs: Logs) -> Result<Running> {
+    let prepared = crate::network::prepare(&group)?;
+    start_prepared(group, upstream, logs, prepared).await
+}
+
+pub async fn start_prepared(
+    group: Group,
+    upstream: u16,
+    logs: Logs,
+    prepared: crate::network::Prepared,
+) -> Result<Running> {
     logs.lock().unwrap().register(&group);
     let ranges: Vec<_> = group
         .sources
@@ -86,7 +95,9 @@ pub async fn start(group: Group, upstream: u16, logs: Logs) -> Result<Running> {
         .collect::<std::result::Result<_, _>>()?;
     // Verify upstream before opening the public listener.
     adb::query(upstream, "host:version").await?;
-    let listener = TcpListener::bind((group.address, group.port)).await?;
+    // An elevation prompt or upstream query can outlive an adapter change.
+    crate::network::check_group(&group)?;
+    let listeners = prepared.listen()?;
     let cancel = CancellationToken::new();
     let stop = cancel.clone();
     let sessions = Sessions::default();
@@ -108,7 +119,12 @@ pub async fn start(group: Group, upstream: u16, logs: Logs) -> Result<Running> {
             None,
             None,
             "group-enabled",
-            format!("{}:{}", group.address, group.port),
+            listeners
+                .iter()
+                .filter_map(|l| l.local_addr().ok())
+                .map(|a| a.to_string())
+                .collect::<Vec<_>>()
+                .join(", "),
         );
         for serial in &group.members {
             if !group.disabled_members.contains(serial) {
@@ -137,9 +153,12 @@ pub async fn start(group: Group, upstream: u16, logs: Logs) -> Result<Running> {
             tokio::select! {
                 _=stop.cancelled()=>break,
                 Some(_)=jobs.join_next()=>{},
-                accepted=listener.accept()=>{
+                accepted=async {
+                    if listeners.len() == 1 { listeners[0].accept().await }
+                    else { tokio::select! { result=listeners[0].accept()=>result, result=listeners[1].accept()=>result } }
+                }=>{
                     let (mut client,peer)=match accepted {Ok(v)=>v,Err(e)=>{logs.lock().unwrap().event(Some(&group.id),None,None,"error",e.to_string());break;}};
-                    let allowed=match peer.ip() {IpAddr::V4(ip)=>ip.is_loopback() || ranges.iter().any(|r|r.contains(ip)),_=>false};
+                    let allowed=peer.ip().is_loopback() || ranges.iter().any(|r|r.contains(peer.ip()));
                     let permit=limit.clone().try_acquire_owned();
                     if !allowed || permit.is_err() {logs.lock().unwrap().event(Some(&group.id),None,None,"denied",peer.to_string());continue;}
                     let permit=permit.unwrap();let group=group.clone();let logs=logs.clone();let sessions=live.clone();let stop=stop.clone();let rx=rx.clone();
@@ -155,7 +174,7 @@ pub async fn start(group: Group, upstream: u16, logs: Logs) -> Result<Running> {
                 }
             }
         }
-        drop(listener);
+        drop(listeners);
         jobs.abort_all();
         while jobs.join_next().await.is_some() {}
         logs.lock()

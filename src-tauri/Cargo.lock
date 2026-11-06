@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "adbshare"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "gtk",
  "if-addrs",
@@ -12,6 +12,7 @@ dependencies = [
  "prost",
  "serde",
  "serde_json",
+ "socket2",
  "tauri",
  "tauri-build",
  "tauri-plugin-clipboard-manager",

@@ -2,6 +2,8 @@ export type Group = {
   id: string;
   name: string;
   address: string;
+  ipv6Address?: string;
+  interfaceName?: string;
   port: number;
   sources: string[];
   members: string[];
@@ -17,11 +19,21 @@ export type Device = {
 };
 export type Session = { id: number; peer: string; serial: string; since: number };
 export type Runtime = { id: string; status: string; sessions: Session[] };
-export type Interface = { name: string; address: string; cidr: string };
+export type Interface = {
+  id: string;
+  name: string;
+  address: string;
+  cidr: string;
+  family: 'ipv4' | 'ipv6';
+  scopeId: number;
+  available: boolean;
+  reason: string | null;
+};
 export type Snapshot = {
   config: Config;
   runtime: Runtime[];
   interfaces: Interface[];
+  networkError: string | null;
   configPath: string;
   configError: string | null;
   automaticFirewall: boolean;

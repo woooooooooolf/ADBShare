@@ -59,8 +59,21 @@ async fn start_refreshes_latest_rules_and_failed_elevation_never_starts_listener
     let dir = tempfile::tempdir().unwrap();
     let backend = Arc::new(Fake::default());
     let mut g = group();
-    g.address = "192.168.1.23".parse().unwrap();
-    g.port = 23456;
+    let Some(interface) = adbshare::network::interfaces()
+        .unwrap()
+        .into_iter()
+        .find(|i| i.family == "ipv4" && i.id != "loopback" && i.available)
+    else {
+        eprintln!("SKIP: no available external IPv4 adapter for firewall lifecycle test");
+        return;
+    };
+    g.address = interface.address.parse().unwrap();
+    g.interface_name = Some(interface.id);
+    g.port = std::net::TcpListener::bind((g.address, 0))
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
     g.sources = vec!["192.168.1.45".into()];
     let app = app(dir.path(), vec![g.clone()], backend.clone());
     backend.fail.store(true, Ordering::SeqCst);
@@ -87,6 +100,8 @@ fn group() -> Group {
         id: uuid::Uuid::new_v4().to_string(),
         name: "Test".into(),
         address: "127.0.0.1".parse().unwrap(),
+        ipv6_address: None,
+        interface_name: None,
         port: 15037,
         sources: vec!["127.0.0.1".into()],
         disabled_members: vec![],
@@ -420,4 +435,19 @@ async fn device_enablement_persists_without_removing_history_or_other_members() 
         vec!["device-disabled", "device-enabled"]
     );
     assert!(app.set_device_enabled(&g.id, "OTHER", true).await.is_err());
+}
+
+#[tokio::test]
+async fn unavailable_adapter_is_rejected_before_firewall_mutation() {
+    let dir = tempfile::tempdir().unwrap();
+    let backend = Arc::new(Fake::default());
+    let mut g = group();
+    g.address = "192.0.2.123".parse().unwrap();
+    g.interface_name = Some("nonexistent-test-adapter".into());
+    let app = app(dir.path(), vec![g.clone()], backend.clone());
+    let error = app.start_group(&g.id).await.unwrap_err();
+    assert!(error.contains("网卡地址不可用"));
+    assert!(backend.applied.lock().unwrap().is_empty());
+    assert!(!dir.path().join("firewall-rules.json").exists());
+    assert!(app.inner.lock().await.running.is_empty());
 }

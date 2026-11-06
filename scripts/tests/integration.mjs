@@ -13,6 +13,8 @@ const work = await prepareWorkspace('integration');
 const port = await freePort();
 const other = await freePort();
 const network = await freePort();
+const ipv6Port = await freePort();
+const dualPort = await freePort();
 const group = (p, m) => ({
   id: randomUUID(),
   name: 'Integration',
@@ -29,6 +31,8 @@ const config = {
     group(port, ['SIM-PIXEL']),
     group(other, ['SIM-TABLET']),
     group(network, ['emulator-5554']),
+    { ...group(ipv6Port, ['SIM-PIXEL']), address: '::1', sources: ['::1'] },
+    { ...group(dualPort, ['SIM-PIXEL']), ipv6Address: '::1', sources: ['127.0.0.1', '::1'] },
   ],
 };
 const file = path.join(work, 'config.json');
@@ -66,9 +70,12 @@ async function adb(...args) {
   return adbAt(port, ...args);
 }
 async function adbAt(sharedPort, ...args) {
+  return adbHostAt('127.0.0.1', sharedPort, ...args);
+}
+async function adbHostAt(host, sharedPort, ...args) {
   const { stdout } = await runCommand(process.env.ADB_PATH || 'adb', [
     '-H',
-    '127.0.0.1',
+    host,
     '-P',
     String(sharedPort),
     ...args,
@@ -141,6 +148,34 @@ try {
   console.log('PASS denied commands and selectors');
   assert.match(await adb('devices', '-l'), /SIM-PIXEL/);
   console.log('PASS standard adb devices');
+  for (const [host, sharedPort] of [
+    ['[::1]', ipv6Port],
+    ['127.0.0.1', dualPort],
+    ['[::1]', dualPort],
+  ]) {
+    assert.match(await adbHostAt(host, sharedPort, 'devices', '-l'), /SIM-PIXEL/);
+    assert.equal(await adbHostAt(host, sharedPort, '-s', 'SIM-PIXEL', 'get-state'), 'device');
+    assert.match(
+      await adbHostAt(host, sharedPort, '-s', 'SIM-PIXEL', 'shell', 'echo', 'ipv6'),
+      /ipv6/,
+    );
+  }
+  for (const [host, sharedPort] of [
+    ['::1', port],
+    ['127.0.0.1', ipv6Port],
+  ]) {
+    await assert.rejects(async () => {
+      const socket = net.connect({ host, port: sharedPort });
+      try {
+        await once(socket, 'connect');
+      } finally {
+        socket.destroy();
+      }
+    });
+  }
+  console.log(
+    'PASS standard adb IPv6-only and dual-stack inventory/state/shell; opposite-family connections rejected',
+  );
   assert.equal(await adb('-s', 'SIM-PIXEL', 'get-state'), 'device');
   console.log('PASS standard adb get-state');
   assert.equal(await adb('-s', 'SIM-PIXEL', 'shell', 'echo', 'adbshare-cli-ok'), 'adbshare-cli-ok');
@@ -218,6 +253,29 @@ try {
   await adb('-s', 'SIM-PIXEL', 'pull', '/data/local/tmp/adbshare-probe.bin', pulled);
   assert.deepEqual(await readFile(pulled), bytes);
   console.log('PASS standard adb push/pull binary roundtrip against fake device');
+  for (const sharedPort of [ipv6Port, dualPort]) {
+    const result = path.join(work, `pulled-ipv6-${sharedPort}.bin`);
+    await adbHostAt(
+      '[::1]',
+      sharedPort,
+      '-s',
+      'SIM-PIXEL',
+      'push',
+      source,
+      '/data/local/tmp/adbshare-probe.bin',
+    );
+    await adbHostAt(
+      '[::1]',
+      sharedPort,
+      '-s',
+      'SIM-PIXEL',
+      'pull',
+      '/data/local/tmp/adbshare-probe.bin',
+      result,
+    );
+    assert.deepEqual(await readFile(result), bytes);
+  }
+  console.log('PASS standard adb IPv6 push/pull binary roundtrips on both listening modes');
   assert(!lab.state.requests.includes('host:kill'));
   assert(!lab.state.requests.some((r) => /forward|^reverse:/.test(r)));
   console.log('PASS upstream remains usable; no host mutation forwarded');

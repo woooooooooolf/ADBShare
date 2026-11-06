@@ -1,3 +1,4 @@
+pub use crate::network::{interfaces, Interface};
 use crate::{
     gateway::{self, Running, Session},
     history::{self, Logs},
@@ -31,13 +32,6 @@ pub struct Inner {
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Interface {
-    name: String,
-    address: String,
-    cidr: String,
-}
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct Runtime {
     id: String,
     status: String,
@@ -49,6 +43,7 @@ pub struct Snapshot {
     config: Config,
     runtime: Vec<Runtime>,
     interfaces: Vec<Interface>,
+    network_error: Option<String>,
     config_path: String,
     config_error: Option<String>,
     automatic_firewall: bool,
@@ -128,19 +123,21 @@ impl App {
         if group.members.is_empty() {
             return Err("请先选择至少一台设备".into());
         }
-        if let Some(firewall) = self
-            .firewall
-            .clone()
-            .filter(|_| !group.address.is_loopback())
-        {
+        let prepared = crate::network::prepare(&group)?;
+        if let Some(firewall) = self.firewall.clone().filter(|_| !group.is_loopback()) {
             let latest = group.clone();
             tokio::task::spawn_blocking(move || firewall.apply(&latest))
                 .await
                 .map_err(|e| e.to_string())??;
         }
-        let running = gateway::start(group, inner.config.upstream_port, self.logs.clone())
-            .await
-            .map_err(|e| e.to_string())?;
+        let running = gateway::start_prepared(
+            group,
+            inner.config.upstream_port,
+            self.logs.clone(),
+            prepared,
+        )
+        .await
+        .map_err(|e| e.to_string())?;
         inner.running.insert(id.into(), running);
         Ok(())
     }
@@ -170,8 +167,11 @@ impl App {
             if let Some(r) = inner.running.remove(id) {
                 r.stop().await;
             }
-        } else if group.address.is_loopback() {
+        } else if group.is_loopback() {
             return Err("仅本机模式不需要防火墙规则".into());
+        }
+        if !remove {
+            crate::network::check_group(&group)?;
         }
         let group_id = id.to_owned();
         let id = id.to_owned();
@@ -279,34 +279,6 @@ pub async fn delete_group(id: String, app: State<'_, App>) -> Result<(), String>
     app.delete_group(&id).await
 }
 
-pub fn interfaces() -> Vec<Interface> {
-    let mut result = vec![Interface {
-        name: "仅本机测试".into(),
-        address: "127.0.0.1".into(),
-        cidr: "127.0.0.0/8".into(),
-    }];
-    if let Ok(list) = if_addrs::get_if_addrs() {
-        for i in list {
-            if let if_addrs::IfAddr::V4(v) = i.addr {
-                if v.ip.is_loopback() || v.ip.is_link_local() || v.ip.is_unspecified() {
-                    continue;
-                }
-                result.push(Interface {
-                    name: i.name,
-                    address: v.ip.to_string(),
-                    cidr: format!(
-                        "{}/{}",
-                        std::net::Ipv4Addr::from(u32::from(v.ip) & u32::from(v.netmask)),
-                        u32::from(v.netmask).count_ones()
-                    ),
-                });
-            }
-        }
-    }
-    result.sort_by(|a, b| a.address.cmp(&b.address));
-    result.dedup_by(|a, b| a.address == b.address);
-    result
-}
 pub fn config_path(handle: &tauri::AppHandle) -> Result<PathBuf, tauri::Error> {
     let directory = match std::env::var_os("ADB_SHARE_DATA_DIR") {
         Some(directory) => PathBuf::from(directory),
@@ -331,10 +303,15 @@ pub async fn snapshot(app: State<'_, App>) -> Result<Snapshot, String> {
             sessions: r.sessions.lock().unwrap().values().cloned().collect(),
         })
         .collect();
+    let (interfaces, network_error) = match interfaces() {
+        Ok(list) => (list, None),
+        Err(error) => (vec![], Some(error)),
+    };
     Ok(Snapshot {
         config: inner.config.clone(),
         runtime,
-        interfaces: interfaces(),
+        interfaces,
+        network_error,
         config_path: app.path.display().to_string(),
         config_error: app.config_error.clone(),
         automatic_firewall: app.firewall.is_some(),

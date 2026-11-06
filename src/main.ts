@@ -14,6 +14,16 @@ import {
 } from './i18n';
 import { icons } from './icons';
 import { hasNonLocalSources } from './source-warning';
+import {
+  adapterId,
+  commandHost,
+  displayAddress,
+  endpointAddresses,
+  endpointAvailable,
+  groupMode,
+  isLoopback,
+  type NetworkMode,
+} from './network';
 import type { Group, Device, Snapshot } from './types';
 import { $, dialog, esc } from './ui/dom';
 import { appMarkup } from './ui/template';
@@ -27,6 +37,7 @@ let data: Snapshot;
 let devices: Device[] = [];
 let draft: Group | null = null;
 let dirty = false;
+let protocolMode: NetworkMode = 'ipv4';
 let busy = false;
 let adbError = '';
 let connected = false;
@@ -91,6 +102,7 @@ async function sync() {
   $('firewall-controls').hidden = !data.automaticFirewall;
   $('external-firewall-hint').hidden = data.automaticFirewall;
   $('linux-adb-hint').hidden = data.automaticFirewall;
+  renderAddressOptions();
   renderSide();
   renderState();
   if (activity.isOpen()) await activity.refresh();
@@ -122,17 +134,67 @@ function renderSide() {
   $('editor-header').hidden = !draft;
 }
 function renderAddressOptions() {
-  if (!draft) return;
-  const interfaces = [...data.interfaces];
-  if (!interfaces.some((i) => i.address === draft!.address))
-    interfaces.push({ address: draft.address, name: t('unavailableAddress'), cidr: '' });
-  $('address').innerHTML = interfaces
+  if (!draft || !data) return;
+  const id = adapterId(draft, data.interfaces);
+  const adapters = new Map(data.interfaces.map((i) => [i.id, i.name]));
+  if (!adapters.has(id)) adapters.set(id, t('unavailableAddress'));
+  $('adapter').innerHTML = [...adapters]
     .map(
-      (i) =>
-        `<option value="${esc(i.address)}">${esc(i.address)} · ${esc(i.address === '127.0.0.1' ? t('localOnly') : i.name)}</option>`,
+      ([value, name]) =>
+        `<option value="${esc(value)}">${esc(value === 'loopback' ? t('localOnly') : name)}</option>`,
     )
     .join('');
+  $<HTMLSelectElement>('adapter').value = id;
+  $<HTMLSelectElement>('network-mode').value = protocolMode;
+  const rows = data.interfaces.filter((i) => i.id === id);
+  const options = (family: 'ipv4' | 'ipv6', selected: string) => {
+    const candidates = rows.filter((i) => i.family === family);
+    const choices = candidates.map(
+      (i) =>
+        `<option value="${esc(i.address)}" ${i.available ? '' : 'disabled'}>${esc(i.address)}${i.available ? '' : ` · ${t(i.reason as Parameters<typeof t>[0])}`}</option>`,
+    );
+    if (!candidates.some((i) => i.address === selected))
+      choices.unshift(
+        `<option value="${esc(selected)}">${esc(selected || t('noUsableAddress'))}${selected ? ` · ${t('unavailableAddress')}` : ''}</option>`,
+      );
+    return choices.join('');
+  };
+  $('address-label').textContent = protocolMode === 'ipv6' ? 'IPv6' : 'IPv4';
+  $('address').innerHTML = options(protocolMode === 'ipv6' ? 'ipv6' : 'ipv4', draft.address);
   $<HTMLSelectElement>('address').value = draft.address;
+  $('ipv6-address-field').hidden = protocolMode !== 'dual';
+  $('ipv6-address').innerHTML = options('ipv6', draft.ipv6Address || '');
+  $<HTMLSelectElement>('ipv6-address').value = draft.ipv6Address || '';
+  const status = ['ipv4', 'ipv6']
+    .map(
+      (family) =>
+        `${family === 'ipv4' ? 'IPv4' : 'IPv6'}: ${t(rows.some((i) => i.family === family && i.available) ? 'networkReady' : 'noUsableAddress')}`,
+    )
+    .join(' · ');
+  $('network-status').textContent = data.networkError ? errorText(data.networkError) : status;
+  $('network-status').classList.toggle(
+    'source-warning',
+    !endpointAvailable(draft, data.interfaces, protocolMode),
+  );
+  $('link-local-hint').hidden = !endpointAddresses(draft).some((a) => /^fe[89ab]/i.test(a));
+}
+function selectNetwork(id: string, mode: NetworkMode) {
+  if (!draft) return;
+  const rows = data.interfaces.filter((i) => i.id === id && i.available);
+  const choose = (family: 'ipv4' | 'ipv6') =>
+    rows.find((i) => i.family === family && endpointAddresses(draft!).includes(i.address)) ??
+    rows.find((i) => i.family === family && !/^fe[89ab]/i.test(i.address)) ??
+    rows.find((i) => i.family === family);
+  protocolMode = mode;
+  draft.interfaceName = id;
+  const primary = choose(mode === 'ipv6' ? 'ipv6' : 'ipv4');
+  const secondary = mode === 'dual' ? choose('ipv6') : undefined;
+  draft.address = primary?.address || '';
+  draft.ipv6Address = secondary?.address;
+  draft.sources = [primary?.cidr, secondary?.cidr].filter((s): s is string => !!s);
+  dirty = true;
+  clearNotice();
+  renderEditor();
 }
 function renderEditor() {
   $('welcome').hidden = !!draft;
@@ -194,10 +256,14 @@ function renderLocalDevices() {
 }
 function commands() {
   if (!draft) return [];
-  const base = `adb -H ${draft.address} -P ${draft.port}`;
   const serial = draft.members[0];
   const arg = serial ? `"${serial.replace(/["`$\\]/g, '')}"` : 'SERIAL';
-  return [`${base} devices -l`, `${base} -s ${arg} shell`];
+  return endpointAddresses(draft)
+    .filter(Boolean)
+    .flatMap((address) => {
+      const base = `adb -H ${commandHost(address)} -P ${draft!.port}`;
+      return [`${base} devices -l`, `${base} -s ${arg} shell`];
+    });
 }
 function renderState() {
   if (activity.isOpen()) activity.render();
@@ -210,24 +276,41 @@ function renderState() {
   $('group-state').textContent = r ? t(running ? 'running' : 'failed') : '';
   $('group-state').className = `badge ${running ? 'active' : ''}`;
   $('member-count').textContent = t('selectedCount', { n: draft.members.length });
-  for (const id of ['group-name', 'port', 'address', 'sources'])
+  for (const id of [
+    'group-name',
+    'port',
+    'adapter',
+    'network-mode',
+    'address',
+    'ipv6-address',
+    'sources',
+  ])
     $<HTMLInputElement>(id).disabled = disabled || busy;
   $('devices')
     .querySelectorAll<HTMLInputElement>('input')
     .forEach((e) => (e.disabled = disabled || busy));
-  $<HTMLButtonElement>('save').disabled = disabled || busy || !dirty;
-  $<HTMLButtonElement>('toggle').disabled = busy;
+  const networkAvailable =
+    !data.networkError && endpointAvailable(draft, data.interfaces, protocolMode);
+  $<HTMLButtonElement>('save').disabled = disabled || busy || !dirty || !networkAvailable;
+  $<HTMLButtonElement>('toggle').disabled = busy || (!r && !networkAvailable);
   $('toggle').textContent = t(r ? 'stop' : dirty ? 'saveStart' : 'start');
   $('toggle').className = r ? 'stop-button' : 'primary';
   $<HTMLButtonElement>('delete-group').disabled = busy;
   $<HTMLButtonElement>('firewall-add').disabled =
-    busy || (locked() && dirty) || draft.address.startsWith('127.');
+    busy || (locked() && dirty) || !networkAvailable || isLoopback(draft.address);
   $<HTMLButtonElement>('firewall-remove').disabled =
     busy || !data.config.groups.some((g) => g.id === draft!.id);
   $('group-state').title = disabled ? t('editStopped') : '';
   const cmd = commands();
-  $('connection').innerHTML =
-    `<div class="endpoint"><span>${t(draft.address.startsWith('127.') ? 'localOnly' : 'endpoint')}</span><strong>${esc(draft.address)}<em>:${draft.port}</em></strong><small>${t(running ? 'listening' : 'notListening')}</small></div>${dirty ? `<p class="draft-warning">${t('commandPreview')}</p>` : ''}${cmd.map((c, i) => `<div class="command"><span>${t(i === 0 ? 'listCommand' : 'shellCommand')}</span><code>${esc(c)}</code><button class="text-btn copy" data-command="${i}">${t('copy')}</button></div>`).join('')}`;
+  $('connection').innerHTML = `${endpointAddresses(draft)
+    .filter(Boolean)
+    .map(
+      (address) =>
+        `<div class="endpoint"><span>${t(isLoopback(address) ? 'localOnly' : 'endpoint')}</span><strong>${esc(displayAddress(address))}<em>:${draft!.port}</em></strong><small>${t(running ? 'listening' : 'notListening')}</small></div>`,
+    )
+    .join(
+      '',
+    )}${dirty ? `<p class="draft-warning">${t('commandPreview')}</p>` : ''}${cmd.map((c, i) => `<div class="command"><span>${t(i % 2 === 0 ? 'listCommand' : 'shellCommand')}</span><code>${esc(c)}</code><button class="text-btn copy" data-command="${i}">${t('copy')}</button></div>`).join('')}`;
   $('connection')
     .querySelectorAll<HTMLButtonElement>('.copy')
     .forEach(
@@ -294,24 +377,32 @@ async function selectGroup(id: string) {
   const g = data.config.groups.find((g) => g.id === id);
   if (!g) return;
   draft = structuredClone(g);
+  protocolMode = groupMode(draft);
   dirty = false;
   clearNotice();
   renderEditor();
 }
 async function newGroup() {
   if (busy || !data || !(await mayDiscard())) return;
+  const usable = data.interfaces.filter((i) => i.available);
   const iface =
-    data.interfaces.find(
-      (i) =>
-        !i.address.startsWith('127.') &&
-        /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(i.address),
-    ) || data.interfaces.find((i) => i.address === '127.0.0.1')!;
+    usable.find(
+      (i) => i.family === 'ipv4' && /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(i.address),
+    ) ??
+    usable.find((i) => i.id !== 'loopback') ??
+    usable[0];
+  if (!iface) {
+    notify(t('noUsableAddress'), true);
+    return;
+  }
+  protocolMode = iface.family;
   let port = 15037;
   while (data.config.groups.some((g) => g.port === port)) port++;
   draft = {
     id: crypto.randomUUID(),
     name: t('newName'),
     address: iface.address,
+    interfaceName: iface.id,
     port,
     sources: [iface.cidr],
     members: [],
@@ -452,14 +543,38 @@ $('sources').oninput = () => {
     markDirty();
   }
 };
-$('address').onchange = () => {
-  if (draft) {
-    draft.address = $<HTMLSelectElement>('address').value;
-    draft.sources = [data.interfaces.find((i) => i.address === draft!.address)?.cidr || ''];
-    dirty = true;
-    renderEditor();
-  }
+$('adapter').onchange = () => selectNetwork($<HTMLSelectElement>('adapter').value, protocolMode);
+$('network-mode').onchange = () => {
+  if (draft)
+    selectNetwork(
+      adapterId(draft, data.interfaces),
+      $<HTMLSelectElement>('network-mode').value as NetworkMode,
+    );
 };
+for (const field of ['address', 'ipv6-address'])
+  $(field).onchange = () => {
+    if (!draft) return;
+    const address = $<HTMLSelectElement>(field).value;
+    // Keep legacy callers selecting an address able to identify its adapter.
+    const row = data.interfaces.find(
+      (i) =>
+        i.address === address &&
+        (i.id === adapterId(draft!, data.interfaces) || !draft!.interfaceName),
+    );
+    if (field === 'address') draft.address = address;
+    else draft.ipv6Address = address || undefined;
+    if (row) draft.interfaceName = row.id;
+    draft.sources = endpointAddresses(draft)
+      .map(
+        (a) =>
+          data.interfaces.find(
+            (i) => i.address === a && i.id === adapterId(draft!, data.interfaces),
+          )?.cidr,
+      )
+      .filter((s): s is string => !!s);
+    markDirty();
+    renderEditor();
+  };
 $('save').onclick = () =>
   void action(async () => {
     await save();
@@ -501,7 +616,10 @@ $('delete-group').onclick = async () => {
     draft = null;
     dirty = false;
     await sync();
-    if (data.config.groups[0]) draft = structuredClone(data.config.groups[0]);
+    if (data.config.groups[0]) {
+      draft = structuredClone(data.config.groups[0]);
+      protocolMode = groupMode(draft);
+    }
     renderEditor();
   });
 };
@@ -586,7 +704,10 @@ async function boot() {
     await sync();
     if (data.configError)
       notify(`${t('configFailed')}: ${errorText(data.configError)} (${data.configPath})`, true);
-    if (data.config.groups[0]) draft = structuredClone(data.config.groups[0]);
+    if (data.config.groups[0]) {
+      draft = structuredClone(data.config.groups[0]);
+      protocolMode = groupMode(draft);
+    }
     renderEditor();
     await refreshDevices();
   } catch (e) {

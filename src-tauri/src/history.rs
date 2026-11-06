@@ -232,6 +232,8 @@ mod tests {
             id: id.into(),
             name: id.into(),
             address: "127.0.0.1".parse().unwrap(),
+            ipv6_address: None,
+            interface_name: None,
             port: 15037,
             sources: vec![],
             members: members.iter().map(|s| s.to_string()).collect(),

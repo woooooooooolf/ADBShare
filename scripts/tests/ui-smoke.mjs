@@ -569,13 +569,14 @@ try {
   await page.locator('#close-history').click();
   console.log('PASS group deletion purges its history');
   await page.locator('#new-bottom').click();
+  await page.locator('#adapter').selectOption('loopback');
   await page.locator('#address').selectOption('127.0.0.1');
   await name.fill('新建流程');
   await page.locator('[data-serial="SIM-PIXEL"]').check();
   await page.locator('#sources').fill('203.0.113.999');
   await page.locator('#save').click();
   await expect(page.locator('body')).not.toHaveClass(/busy/);
-  await expect(page.locator('#notice')).toContainText('无效 IPv4');
+  await expect(page.locator('#notice')).toContainText('无效 IP');
   await page.locator('#sources').fill('203.0.113.10/32\n198.51.100.0/24');
   await expect(page.locator('#source-warning')).toBeVisible();
   await expect(page.locator('#source-warning')).toContainText('非局域网地址');
@@ -620,6 +621,7 @@ try {
     'PASS public source save/start/reload, localized nonblocking warnings, CIDR coverage and invalid-source rejection',
   );
   await page.locator('#new-bottom').click();
+  await page.locator('#adapter').selectOption('loopback');
   await page.locator('#address').selectOption('127.0.0.1');
   await name.fill('另一个共享组');
   await page.locator('[data-serial="SIM-PIXEL"]').check();
@@ -632,6 +634,80 @@ try {
   await expect(page.locator('#welcome')).toBeHidden();
   await expect(page.locator('#notice')).toBeHidden();
   console.log('PASS deleting one of several groups selects the remaining group');
+  await expect(page.locator('#network-status')).toContainText('IPv6: 地址可用');
+  await page.locator('#network-mode').selectOption('ipv6');
+  await expect(page.locator('#address')).toHaveValue('::1');
+  await expect(page.locator('#sources')).toHaveValue('::1/128');
+  await expect(page.locator('#connection code').first()).toContainText('-H "[::1]"');
+  await expect(page.locator('#firewall-add')).toBeDisabled();
+  await page.locator('#save').click();
+  await expect(page.locator('body')).not.toHaveClass(/busy/);
+  await expect(page.locator('#save')).toBeDisabled();
+  await page.locator('#toggle').click();
+  await expect(page.locator('#group-state')).toContainText('共享中');
+  await page.locator('#toggle').click();
+  await expect(page.locator('#group-state')).toBeHidden();
+  await page.reload();
+  await expect(page.locator('#network-mode')).toHaveValue('ipv6');
+  await page.locator('#network-mode').selectOption('dual');
+  await expect(page.locator('#address')).toHaveValue('127.0.0.1');
+  await expect(page.locator('#ipv6-address')).toHaveValue('::1');
+  await expect(page.locator('#connection code')).toHaveCount(4);
+  await page.locator('#save').click();
+  await expect(page.locator('body')).not.toHaveClass(/busy/);
+  await expect(page.locator('#save')).toBeDisabled();
+  const dualConfig = JSON.parse(await readFile(file, 'utf8')).groups[0];
+  assert.equal(dualConfig.ipv6Address, '::1');
+  assert.equal(dualConfig.interfaceName, 'loopback');
+  await page.locator('#toggle').click();
+  await expect(page.locator('#group-state')).toContainText('共享中');
+  for (const id of ['adapter', 'network-mode', 'ipv6-address'])
+    await expect(page.locator(`#${id}`)).toBeDisabled();
+  await page.locator('#toggle').click();
+  await expect(page.locator('#group-state')).toBeHidden();
+  await page.locator('#language-toggle').click();
+  await expect(page.locator('#network-mode option:checked')).toHaveText('IPv4 + IPv6');
+  await expect(page.locator('#network-status')).toContainText('Address available');
+  await resizeWindow(page, 640, 480);
+  await assertFits(page);
+  await page.screenshot({ path: path.join(directory, 'ipv6-dual-narrow-en.png'), fullPage: true });
+  await page.locator('#language-toggle').click();
+  // Transform snapshot callbacks in this test window. Native invoke is read-only.
+  await page.evaluate(() => {
+    const callbacks = window.__TAURI_INTERNALS__.callbacks;
+    const original = callbacks.get;
+    window.__restoreNetworkGet = original;
+    callbacks.get = function (id) {
+      const callback = original.call(this, id);
+      return (
+        callback &&
+        ((data) =>
+          callback(
+            data && Array.isArray(data.interfaces)
+              ? { ...data, interfaces: data.interfaces.filter((i) => i.family !== 'ipv6') }
+              : data,
+          ))
+      );
+    };
+  });
+  await expect(page.locator('#network-status')).toContainText('无可用地址或协议未启用');
+  await expect(page.locator('#toggle')).toBeDisabled();
+  await page.locator('#network-mode').selectOption('ipv4');
+  await expect(page.locator('#toggle')).toBeEnabled();
+  await page.locator('#network-mode').selectOption('dual');
+  await expect(page.locator('#toggle')).toBeDisabled();
+  await page.evaluate(() => {
+    window.__TAURI_INTERNALS__.callbacks.get = window.__restoreNetworkGet;
+  });
+  await expect(page.locator('#network-status')).toContainText('IPv6: 地址可用');
+  await page.locator('#network-mode').selectOption('ipv4');
+  await page.locator('#save').click();
+  await expect(page.locator('body')).not.toHaveClass(/busy/);
+  await expect(page.locator('#save')).toBeDisabled();
+  console.log(
+    'PASS IPv6-only/dual save/start/reload, bracketed commands, mode locking and missing-family prevention',
+  );
+
   await page.locator('#settings').click();
   await expect(page.locator('#upstream-port')).toHaveValue(String(lab.port));
   await page.locator('#close-settings').click();

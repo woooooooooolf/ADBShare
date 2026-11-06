@@ -163,6 +163,8 @@ fn group(members: &[&str]) -> Group {
         id: uuid::Uuid::new_v4().to_string(),
         name: "Test".into(),
         address: "127.0.0.1".parse().unwrap(),
+        ipv6_address: None,
+        interface_name: None,
         port,
         sources: vec!["127.0.0.1".into()],
         disabled_members: vec![],
@@ -669,7 +671,7 @@ async fn source_policy_is_enforced_on_a_real_adapter_socket() {
     };
     let lab = lab().await;
     let mut g = group(&["A"]);
-    g.address = ip;
+    g.address = ip.into();
     // A public/non-private source is valid configuration, but does not admit this private peer.
     g.sources = vec!["203.0.113.10/32".into()];
     let r = gateway::start(g.clone(), lab.port, Default::default())
@@ -698,6 +700,151 @@ async fn source_policy_is_enforced_on_a_real_adapter_socket() {
         .await
         .unwrap();
     let mut c = open(&g, "host:devices-l").await;
+    adb::read_status(&mut c).await.unwrap();
+    assert!(adb::read_frame(&mut c).await.unwrap().contains("A device"));
+    r.stop().await;
+}
+
+#[tokio::test]
+async fn ipv6_only_serves_adb_and_never_opens_ipv4() {
+    let lab = lab().await;
+    let mut g = group(&["A"]);
+    g.address = "::1".parse().unwrap();
+    g.sources = vec!["::1".into()];
+    let r = gateway::start(g.clone(), lab.port, Default::default())
+        .await
+        .unwrap();
+    assert!(TcpStream::connect(("127.0.0.1", g.port)).await.is_err());
+    let mut c = open(&g, "host:devices-l").await;
+    adb::read_status(&mut c).await.unwrap();
+    assert!(adb::read_frame(&mut c).await.unwrap().contains("A device"));
+    let mut c = shell(&g, "host:transport:A").await;
+    c.write_all(&[0, 255, 128, 10]).await.unwrap();
+    let mut bytes = [0; 4];
+    c.read_exact(&mut bytes).await.unwrap();
+    assert_eq!(bytes, [0, 255, 128, 10]);
+    r.stop().await;
+    assert!(TcpStream::connect((g.address, g.port)).await.is_err());
+    assert!(matches!(c.read(&mut bytes).await, Ok(0) | Err(_)));
+}
+
+#[tokio::test]
+async fn ipv4_only_never_opens_ipv6_and_dual_stops_both_endpoints() {
+    let lab = lab().await;
+    let mut g = group(&["A"]);
+    let r = gateway::start(g.clone(), lab.port, Default::default())
+        .await
+        .unwrap();
+    assert!(TcpStream::connect(("::1", g.port)).await.is_err());
+    r.stop().await;
+    g.ipv6_address = Some("::1".parse().unwrap());
+    g.sources.push("::1".into());
+    let r = gateway::start(g.clone(), lab.port, Default::default())
+        .await
+        .unwrap();
+    let mut v6 = g.clone();
+    v6.address = "::1".parse().unwrap();
+    v6.ipv6_address = None;
+    for entry in [&g, &v6] {
+        let mut c = open(entry, "host:devices-l").await;
+        adb::read_status(&mut c).await.unwrap();
+        assert!(adb::read_frame(&mut c).await.unwrap().contains("A device"));
+    }
+    let mut v4_session = shell(&g, "host:transport:A").await;
+    let mut v6_session = shell(&v6, "host:transport:A").await;
+    r.stop().await;
+    assert!(TcpStream::connect((g.address, g.port)).await.is_err());
+    assert!(TcpStream::connect((v6.address, g.port)).await.is_err());
+    let mut bytes = [0];
+    assert!(matches!(v4_session.read(&mut bytes).await, Ok(0) | Err(_)));
+    assert!(matches!(v6_session.read(&mut bytes).await, Ok(0) | Err(_)));
+}
+
+#[tokio::test]
+async fn failed_second_listener_releases_first_listener() {
+    let lab = lab().await;
+    let mut g = group(&["A"]);
+    g.ipv6_address = Some("::1".parse().unwrap());
+    g.sources.push("::1".into());
+    let blocker = TcpListener::bind(("::1", g.port)).await.unwrap();
+    assert!(gateway::start(g.clone(), lab.port, Default::default())
+        .await
+        .is_err());
+    let probe = TcpListener::bind((g.address, g.port)).await.unwrap();
+    drop(probe);
+    drop(blocker);
+}
+
+#[tokio::test]
+async fn adapter_is_rechecked_after_endpoint_reservation() {
+    let lab = lab().await;
+    let mut g = group(&["A"]);
+    let prepared = adbshare::network::prepare(&g).unwrap();
+    g.interface_name = Some("adapter-no-longer-present".into());
+    assert!(
+        gateway::start_prepared(g.clone(), lab.port, Default::default(), prepared)
+            .await
+            .is_err()
+    );
+    assert!(TcpStream::connect((g.address, g.port)).await.is_err());
+    let probe = TcpListener::bind((g.address, g.port)).await.unwrap();
+    drop(probe);
+}
+
+#[tokio::test]
+async fn ipv6_source_policy_on_an_available_adapter_including_link_local_scope() {
+    let Some(interface) = adbshare::network::interfaces()
+        .unwrap()
+        .into_iter()
+        .find(|i| i.family == "ipv6" && i.id != "loopback" && i.available)
+    else {
+        eprintln!("SKIP: no available external IPv6 adapter");
+        return;
+    };
+    let lab = lab().await;
+    let mut g = group(&["A"]);
+    g.address = interface.address.parse().unwrap();
+    g.interface_name = Some(interface.id);
+    let std::net::IpAddr::V6(ip) = g.address else {
+        unreachable!()
+    };
+    let endpoint = std::net::SocketAddrV6::new(
+        ip,
+        g.port,
+        0,
+        if ip.is_unicast_link_local() {
+            interface.scope_id
+        } else {
+            0
+        },
+    );
+    // A nonmatching single address remains valid configuration but denies access.
+    g.sources = vec![
+        if ip == "2001:db8::dead".parse::<std::net::Ipv6Addr>().unwrap() {
+            "2001:db8::beef"
+        } else {
+            "2001:db8::dead"
+        }
+        .into(),
+    ];
+    let r = gateway::start(g.clone(), lab.port, Default::default())
+        .await
+        .unwrap();
+    let mut c = TcpStream::connect(endpoint).await.unwrap();
+    let mut byte = [0];
+    assert!(matches!(
+        tokio::time::timeout(Duration::from_secs(3), c.read(&mut byte))
+            .await
+            .unwrap(),
+        Ok(0) | Err(_)
+    ));
+    r.stop().await;
+    g.sources = vec![g.address.to_string()];
+    let r = gateway::start(g.clone(), lab.port, Default::default())
+        .await
+        .unwrap();
+    let mut c = TcpStream::connect(endpoint).await.unwrap();
+    adb::frame(&mut c, "host:devices-l").await.unwrap();
     adb::read_status(&mut c).await.unwrap();
     assert!(adb::read_frame(&mut c).await.unwrap().contains("A device"));
     r.stop().await;
