@@ -5,5 +5,6 @@ pub mod fonts;
 pub mod gateway;
 pub mod history;
 pub mod model;
+pub mod network;
 pub mod platform;
 pub mod protocol;

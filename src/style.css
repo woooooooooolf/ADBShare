@@ -1244,3 +1244,18 @@ button.history-row > span {
     max-height: 25dvh;
   }
 }
+
+/* Full IPv6 endpoints and adapter names must fit the narrow window layout. */
+.endpoint strong {
+  overflow-wrap: anywhere;
+}
+.form select {
+  min-width: 0;
+  text-overflow: ellipsis;
+}
+#ipv6-address-field {
+  margin-bottom: 14px;
+}
+#network-status {
+  margin-bottom: 14px;
+}

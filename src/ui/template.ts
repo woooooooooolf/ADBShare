@@ -95,11 +95,30 @@ export const appMarkup = /* HTML */ ` <aside>
               <div class="form-row">
                 <label
                   ><span data-i18n="adapter"></span
+                  ><select id="adapter"></select
+                ></label>
+                <label
+                  ><span data-i18n="networkMode"></span
+                  ><select id="network-mode">
+                    <option value="ipv4" data-i18n="ipv4Only"></option>
+                    <option value="ipv6" data-i18n="ipv6Only"></option>
+                    <option value="dual" data-i18n="dualStack"></option></select
+                ></label>
+              </div>
+              <p id="network-status" class="field-help" role="status"></p>
+              <div class="form-row">
+                <label
+                  ><span id="address-label">IPv4</span
                   ><select id="address"></select></label
                 ><label class="port"
                   ><span data-i18n="port"></span><input id="port" type="number" min="1" max="65535"
                 /></label>
               </div>
+              <label id="ipv6-address-field" hidden
+                ><span>IPv6</span
+                ><select id="ipv6-address"></select
+              ></label>
+              <p id="link-local-hint" class="field-help" data-i18n="linkLocalHint" hidden></p>
               <label
                 ><span data-i18n="sources"></span
                 ><textarea

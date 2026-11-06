@@ -265,7 +265,7 @@ try {
     await click('new-bottom');
     await eventually('return !!document.querySelector("[data-serial=SIM-PIXEL]")');
     await execute(
-      'document.querySelector("[data-serial=SIM-PIXEL]").click();document.getElementById("address").value="127.0.0.1";document.getElementById("address").dispatchEvent(new Event("change"));',
+      'document.querySelector("[data-serial=SIM-PIXEL]").click();document.getElementById("adapter").value="loopback";document.getElementById("adapter").dispatchEvent(new Event("change"));document.getElementById("address").value="127.0.0.1";document.getElementById("address").dispatchEvent(new Event("change"));',
     );
     const sharePort = await freePort();
     await execute(
@@ -313,6 +313,29 @@ try {
       'return document.getElementById("history-feedback").textContent === "记录已复制"',
     );
     await click('close-history');
+    for (const mode of ['ipv6', 'dual']) {
+      await execute(
+        'const select=document.getElementById("network-mode");select.value=arguments[0];select.dispatchEvent(new Event("change"));',
+        [mode],
+      );
+      assert(
+        await execute(
+          'return document.getElementById("connection").textContent.includes(arguments[0])',
+          ['-H "[::1]"'],
+        ),
+      );
+      await click('toggle');
+      await eventually('return document.getElementById("group-state").textContent === "共享中"');
+      const group = JSON.parse(await readFile(path.join(directory, 'config.json'), 'utf8'))
+        .groups[0];
+      assert.equal(group.address, mode === 'ipv6' ? '::1' : '127.0.0.1');
+      if (mode === 'dual') assert.equal(group.ipv6Address, '::1');
+      await click('toggle');
+      await eventually('return document.getElementById("group-state").hidden');
+    }
+    console.log(
+      'PASS Linux native IPv6-only and dual-stack mode configuration, commands and sharing',
+    );
     await click('delete-group');
     await eventually('return document.getElementById("confirm-dialog").open');
     assert(
